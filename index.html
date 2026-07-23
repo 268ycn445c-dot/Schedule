@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>よてい ―― みんなのスケジュール</title>
+<title>スケジュールきょうゆう</title>
 <style>
   /* ---------- design tokens ---------- */
   :root{
@@ -397,7 +397,7 @@
       var subDate = relLabel ? '<div class="sub-date num">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>' : '';
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">よてい</span></div>' +
+          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう</span></div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="day-prev" aria-label="まえのひ">◀</button>' +
             '<div class="date-heading" data-swipe-zone="day">' +
@@ -415,7 +415,7 @@
       var label = (ws.getMonth()+1)+"/"+ws.getDate()+" 〜 "+(we.getMonth()+1)+"/"+we.getDate();
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">よてい・1しゅうかん</span></div>' +
+          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・1しゅうかん</span></div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="week-prev" aria-label="まえのしゅう">◀</button>' +
             '<div class="month-heading num" data-swipe-zone="week">'+ label +'</div>' +
@@ -428,7 +428,7 @@
       var m = ui.monthCursor;
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">よてい・1かげつ</span></div>' +
+          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・1かげつ</span></div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="month-prev" aria-label="まえのつき">◀</button>' +
             '<div class="month-heading num" data-swipe-zone="month">'+ (m.getFullYear()) +'ねん '+ (m.getMonth()+1) +'がつ</div>' +
