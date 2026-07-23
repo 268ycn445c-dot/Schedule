@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>よてい ―― みんなのスケジュール</title>
+<style>
+  /* ---------- design tokens ---------- */
+  :root{
+    --paper:#F2F6F6;
+    --paper-raised:#FFFFFF;
+    --ink:#22282B;
+    --ink-soft:#5B6A6E;
+    --line:#D7E2E2;
+    --accent:#F2A63B;        /* あさ・日ざしの色。ブランド色を兼ねる */
+    --accent-ink:#5C3B0A;
+    --sora:#2E7C93;          /* ひる・空の色 */
+    --sora-ink:#EAF6FA;
+    --yoru:#4A4670;          /* よる・たそがれの色 */
+    --yoru-ink:#F1EFFA;
+    --done:#4F8F5B;          /* できた!の色(意味色。アクセントとは別) */
+    --shadow: 0 10px 24px -12px rgba(34,40,43,.28), 0 2px 6px -2px rgba(34,40,43,.12);
+    --radius-card: 26px;
+    --radius-pill: 999px;
+    --font-display:'UD デジタル教科書体N-B','UDデジタル教科書体N-B','BIZ UDPGothic','Hiragino Maru Gothic ProN','Yu Gothic Medium','游ゴシック Medium','游ゴシック',sans-serif;
+    --font-ui:'BIZ UDPGothic','UD デジタル教科書体N-R','Hiragino Maru Gothic ProN','Yu Gothic','游ゴシック',sans-serif;
+    --font-num:'Segoe UI Rounded','Yu Gothic',var(--font-ui);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1B2023;
+      --paper-raised:#262C2F;
+      --ink:#EEF1F1;
+      --ink-soft:#A9B7BA;
+      --line:#333C3F;
+      --accent:#F2B25C;
+      --accent-ink:#2B1B02;
+      --sora:#5FB2CC;
+      --sora-ink:#0E2126;
+      --yoru:#8D87C4;
+      --yoru-ink:#221F35;
+      --done:#7CC48A;
+      --shadow: 0 10px 24px -12px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1B2023; --paper-raised:#262C2F; --ink:#EEF1F1; --ink-soft:#A9B7BA; --line:#333C3F;
+    --accent:#F2B25C; --accent-ink:#2B1B02; --sora:#5FB2CC; --sora-ink:#0E2126;
+    --yoru:#8D87C4; --yoru-ink:#221F35; --done:#7CC48A;
+    --shadow: 0 10px 24px -12px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"]{
+    --paper:#F2F6F6; --paper-raised:#FFFFFF; --ink:#22282B; --ink-soft:#5B6A6E; --line:#D7E2E2;
+    --accent:#F2A63B; --accent-ink:#5C3B0A; --sora:#2E7C93; --sora-ink:#EAF6FA;
+    --yoru:#4A4670; --yoru-ink:#F1EFFA; --done:#4F8F5B;
+    --shadow: 0 10px 24px -12px rgba(34,40,43,.28), 0 2px 6px -2px rgba(34,40,43,.12);
+  }
+
+  *{box-sizing:border-box;}
+  html{font-size:18px;}
+  body{
+    margin:0; min-height:100vh; background:var(--paper); color:var(--ink);
+    font-family:var(--font-ui); -webkit-tap-highlight-color:transparent;
+    overscroll-behavior-y:none;
+  }
+  h1,h2,h3{font-family:var(--font-display); text-wrap:balance; margin:0;}
+  button{font-family:inherit; color:inherit;}
+  :focus-visible{outline:3px solid var(--accent); outline-offset:2px; border-radius:8px;}
+  .num{font-family:var(--font-num); font-variant-numeric:tabular-nums;}
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
+  }
+
+  #app{max-width:640px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; background:var(--paper);}
+
+  /* ---------- header ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:5;
+    background:var(--paper); border-bottom:1px solid var(--line);
+    padding:.9rem 1rem .7rem;
+  }
+  .topbar-row{display:flex; align-items:center; justify-content:space-between; gap:.5rem;}
+  .app-title{font-size:1.05rem; color:var(--ink-soft); letter-spacing:.04em; font-family:var(--font-ui); font-weight:700;}
+  .date-nav{display:flex; align-items:center; justify-content:center; gap:.6rem; margin-top:.5rem;}
+  .arrow-btn{
+    width:3.4rem; height:3.4rem; border-radius:var(--radius-pill); border:1px solid var(--line);
+    background:var(--paper-raised); font-size:1.5rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:var(--shadow); flex:none;
+  }
+  .arrow-btn:active{transform:scale(.94);}
+  .date-heading{flex:1; text-align:center; touch-action:pan-y;}
+  .date-heading .big{font-size:2.3rem; line-height:1.1; font-family:var(--font-display); font-weight:700;}
+  .date-heading .weekday-chip{
+    display:inline-block; margin-top:.3rem; padding:.25rem .9rem; border-radius:var(--radius-pill);
+    background:var(--sora); color:var(--sora-ink); font-weight:700; font-size:1rem;
+  }
+  .date-heading .sub-date{margin-top:.3rem; font-size:.95rem; color:var(--ink-soft);}
+  .month-heading{font-size:1.9rem; text-align:center; flex:1;}
+
+  /* ---------- content ---------- */
+  .content{flex:1; padding:1rem 1rem 8rem; touch-action:pan-y;}
+
+  .empty-state{
+    text-align:center; padding:3rem 1.2rem; color:var(--ink-soft);
+  }
+  .empty-state .face{font-size:3rem; margin-bottom:.6rem;}
+  .empty-state p{font-size:1.3rem; font-family:var(--font-display); margin:0 0 1.2rem;}
+
+  /* ---------- day list ---------- */
+  .day-list{list-style:none; margin:0 0 .8rem; padding:0; display:flex; flex-direction:column; gap:.7rem;}
+
+  .card{
+    position:relative; border-radius:var(--radius-card); background:var(--paper); overflow:hidden;
+  }
+  .card-swipe-track{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:flex-end;
+    padding-right:1.4rem; background:var(--done); color:#fff; font-family:var(--font-display); font-size:1.3rem;
+  }
+  .card-inner{position:relative; display:flex; align-items:stretch; gap:.2rem; background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius-card); box-shadow:var(--shadow);}
+  .card.is-done .card-inner{opacity:.55;}
+  .card.is-done .card-body .card-label{text-decoration:line-through;}
+  .order-badge{
+    flex:none; width:2.4rem; display:flex; align-items:center; justify-content:center;
+    font-size:1.3rem; font-weight:700; color:var(--ink-soft);
+  }
+  .card-body{
+    flex:1; display:flex; align-items:center; gap:.9rem; padding:.8rem 1rem .8rem 0; background:none; border:none;
+    text-align:left; min-height:5.6rem; cursor:pointer;
+  }
+  .icon-slot{flex:none; width:4rem; height:4rem; border-radius:18px; background:var(--paper); display:flex; align-items:center; justify-content:center; overflow:hidden;}
+  .icon-emoji{font-size:2.4rem; line-height:1;}
+  .icon-photo{width:100%; height:100%; object-fit:cover;}
+  .card-label{font-family:var(--font-display); font-size:1.55rem; font-weight:700; line-height:1.25;}
+  .speaker-hint{margin-left:auto; flex:none; font-size:1.3rem; color:var(--ink-soft); opacity:.7;}
+  .drag-handle{
+    flex:none; width:3rem; display:flex; align-items:center; justify-content:center; border:none; background:none;
+    color:var(--ink-soft); font-size:1.5rem; touch-action:none; cursor:grab;
+  }
+  .card.dragging{opacity:.9; box-shadow:var(--shadow); z-index:3;}
+
+  .band-add{
+    display:flex; align-items:center; justify-content:center; gap:.5rem; width:100%;
+    padding:1rem; border:2px dashed var(--line); border-radius:18px; background:none; color:var(--ink-soft);
+    font-size:1.15rem; font-weight:700;
+  }
+  .band-add:active{background:var(--paper-raised);}
+
+  /* ---------- week view ---------- */
+  .week-grid{display:flex; flex-direction:column; gap:.7rem;}
+  .week-row{
+    display:flex; align-items:center; gap:.8rem; padding:.7rem .9rem; border-radius:20px;
+    background:var(--paper-raised); border:1px solid var(--line); box-shadow:var(--shadow);
+  }
+  .week-row.is-today{outline:3px solid var(--accent);}
+  .week-date{flex:none; width:4rem; text-align:center;}
+  .week-date .wd{display:block; font-size:.95rem; color:var(--ink-soft); font-weight:700;}
+  .week-date .dnum{display:block; font-size:1.7rem; line-height:1;}
+  .week-icons{flex:1; display:flex; gap:.4rem; overflow-x:auto; padding:.15rem 0;}
+  .week-icons .mini{flex:none; width:2.6rem; height:2.6rem; border-radius:12px; background:var(--paper); display:flex; align-items:center; justify-content:center; font-size:1.4rem; overflow:hidden;}
+  .week-icons .mini img{width:100%; height:100%; object-fit:cover;}
+  .week-icons .more{flex:none; width:2.6rem; height:2.6rem; border-radius:12px; background:var(--line); display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:700; color:var(--ink-soft);}
+
+  /* ---------- month view ---------- */
+  .month-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:.4rem;}
+  .month-dow{text-align:center; font-size:.9rem; color:var(--ink-soft); font-weight:700; padding-bottom:.3rem;}
+  .month-cell{
+    min-height:4.4rem; border-radius:14px; border:1px solid var(--line); background:var(--paper-raised);
+    padding:.3rem; display:flex; flex-direction:column; gap:.2rem; text-align:left;
+  }
+  .month-cell.is-other{opacity:.35;}
+  .month-cell.is-today{outline:3px solid var(--accent);}
+  .month-cell .dnum{font-size:1.05rem; align-self:flex-end;}
+  .month-count{
+    align-self:flex-start; margin-top:auto; min-width:1.5rem; text-align:center; padding:.1rem .35rem;
+    border-radius:var(--radius-pill); background:var(--accent); color:var(--accent-ink); font-size:.85rem; font-weight:700;
+  }
+
+  /* ---------- presets screen ---------- */
+  .preset-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(7.6rem,1fr)); gap:.8rem;}
+  .preset-tile{
+    display:flex; flex-direction:column; align-items:center; gap:.5rem; padding:.9rem .6rem;
+    border-radius:22px; background:var(--paper-raised); border:1px solid var(--line); box-shadow:var(--shadow);
+  }
+  .preset-tile .icon-slot{width:3.6rem; height:3.6rem;}
+  .preset-tile .icon-emoji{font-size:2.1rem;}
+  .preset-tile .label{font-family:var(--font-display); font-size:1.1rem; text-align:center;}
+  .preset-tile.new{border-style:dashed; color:var(--ink-soft);}
+  .preset-tile.new .icon-slot{background:none; font-size:2rem;}
+  .preset-tile.selected{outline:3px solid var(--accent); border-color:var(--accent);}
+  .preset-tile{position:relative;}
+  .order-chip{
+    position:absolute; top:.4rem; left:.4rem; min-width:1.4rem; height:1.4rem; padding:0 .3rem;
+    border-radius:var(--radius-pill); background:var(--accent); color:var(--accent-ink);
+    font-size:.85rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+  }
+  .set-tile{border-color:var(--sora);}
+  .set-count{
+    position:absolute; top:.4rem; right:.4rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem;
+    border-radius:var(--radius-pill); background:var(--sora); color:var(--sora-ink);
+    font-size:.75rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+  }
+  .section-title{font-size:1.3rem; margin:1.4rem 0 .5rem;}
+
+  /* ---------- bottom nav ---------- */
+  .bottom-nav{
+    position:fixed; left:0; right:0; bottom:0; z-index:6;
+    display:flex; justify-content:center; background:var(--paper); border-top:1px solid var(--line);
+  }
+  .bottom-nav-inner{max-width:640px; width:100%; display:grid; grid-template-columns:repeat(4,1fr);}
+  .nav-btn{
+    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.15rem;
+    padding:.7rem 0 .8rem; background:none; border:none; min-height:5.2rem; color:var(--ink-soft);
+  }
+  .nav-btn .nicon{font-size:1.7rem;}
+  .nav-btn .nlabel{font-size:1.05rem; font-weight:700; font-family:var(--font-display);}
+  .nav-btn.active{color:var(--accent-ink);}
+  .nav-btn.active::before{
+    content:""; position:absolute; top:.35rem; left:50%; transform:translateX(-50%);
+    width:2.4rem; height:.32rem; border-radius:var(--radius-pill); background:var(--accent);
+  }
+
+  /* ---------- modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(20,24,26,.5); display:flex; align-items:flex-end; justify-content:center; z-index:20;
+  }
+  .modal-sheet{
+    width:100%; max-width:640px; max-height:86vh; overflow-y:auto; background:var(--paper); border-radius:26px 26px 0 0;
+    padding:1.1rem 1.1rem 2rem; box-shadow:var(--shadow);
+  }
+  .modal-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:.8rem;}
+  .modal-title{font-size:1.4rem;}
+  .close-btn{width:2.6rem; height:2.6rem; border-radius:50%; border:1px solid var(--line); background:var(--paper-raised); font-size:1.2rem;}
+
+  .field-label{display:block; font-weight:700; margin:1rem 0 .4rem; font-size:1.05rem;}
+  .text-input{
+    width:100%; font-size:1.4rem; font-family:var(--font-display); padding:.7rem .9rem; border-radius:16px;
+    border:1px solid var(--line); background:var(--paper-raised); color:var(--ink);
+  }
+  .hint{font-size:.9rem; color:var(--ink-soft); margin-top:.3rem;}
+  .hint.warn{color:var(--accent-ink);}
+
+  .icon-tabs{display:flex; gap:.5rem; margin-top:.3rem;}
+  .icon-tab{flex:1; padding:.55rem; border-radius:14px; border:1px solid var(--line); background:var(--paper-raised); font-weight:700;}
+  .icon-tab.active{background:var(--sora); color:var(--sora-ink); border-color:var(--sora);}
+
+  .emoji-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:.35rem; margin-top:.6rem; max-height:11rem; overflow-y:auto;}
+  .emoji-opt{aspect-ratio:1; font-size:1.6rem; border-radius:12px; border:1px solid var(--line); background:var(--paper-raised);}
+  .emoji-opt.selected{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 25%, var(--paper-raised));}
+
+  .photo-picker{display:flex; align-items:center; gap:1rem; margin-top:.6rem;}
+  .photo-preview{width:5rem; height:5rem; border-radius:16px; background:var(--paper-raised); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.6rem; color:var(--ink-soft);}
+  .photo-preview img{width:100%; height:100%; object-fit:cover;}
+  .file-btn{padding:.7rem 1.1rem; border-radius:14px; border:1px solid var(--line); background:var(--paper-raised); font-weight:700;}
+
+  .btn-row{display:flex; gap:.7rem; margin-top:1.3rem;}
+  .btn{flex:1; padding:.85rem; border-radius:16px; border:none; font-size:1.15rem; font-weight:700;}
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-ghost{background:var(--paper-raised); border:1px solid var(--line); color:var(--ink);}
+  .btn-danger{background:none; border:1px solid var(--line); color:#B5473C;}
+  .btn:active{transform:scale(.98);}
+
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+<div id="modal-root"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ================= utilities ================= */
+  var uid = function(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); };
+  var escapeHtml = function(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  };
+  var pad2 = function(n){ return (n<10?"0":"")+n; };
+  var formatKey = function(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); };
+  var keyToDate = function(k){ var p=k.split("-").map(Number); return new Date(p[0],p[1]-1,p[2]); };
+  var addDays = function(d,n){ var r=new Date(d); r.setDate(r.getDate()+n); return r; };
+  var addMonths = function(d,n){ var r=new Date(d); r.setMonth(r.getMonth()+n); return r; };
+  var sameDay = function(a,b){ return formatKey(a)===formatKey(b); };
+  function relativeDayLabel(d){
+    var today = new Date(); today.setHours(0,0,0,0);
+    var target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var diffDays = Math.round((target - today) / 86400000);
+    if(diffDays === 0) return "きょう";
+    if(diffDays === 1) return "あした";
+    if(diffDays === 2) return "あさって";
+    if(diffDays === -1) return "きのう";
+    return null;
+  }
+  var startOfWeekSun = function(d){ var r=new Date(d); r.setDate(r.getDate()-r.getDay()); return r; };
+  var WEEKDAY_LONG = ["にちようび","げつようび","かようび","すいようび","もくようび","きんようび","どようび"];
+  var WEEKDAY_SHORT = ["にち","げつ","か","すい","もく","きん","ど"];
+
+  var EMOJI_CHOICES = ["☀️","🌙","⏰","🍚","🍞","🍙","🍜","🍽️","🥛","🍎","🍪","🪥","🚿","🛁","👕","👖","🧦","👟","🎒","📚","✏️","🖍️","🎨","🎵","⚽","🎮","📺","🚗","🚌","🚃","🏥","💊","🦷","🧸","🐶","🐱","🌳","🏫","🏠","🛏️","😴","🎉","🎂","💧","🧻","🧹","📞","🧴","🚻"];
+
+  /* ================= state ================= */
+  var STORAGE_KEY = "yotei-app-state-v1";
+
+  function defaultPresets(){
+    return [];
+  }
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(parsed && parsed.presets){
+          if(!parsed.sets) parsed.sets = [];
+          return parsed;
+        }
+      }
+    }catch(e){}
+    return { presets: defaultPresets(), sets: [], schedule: {} };
+  }
+  var state = loadState();
+  function saveState(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+
+  function getPreset(id){
+    for(var i=0;i<state.presets.length;i++){ if(state.presets[i].id===id) return state.presets[i]; }
+    return null;
+  }
+  function getSet(id){
+    for(var i=0;i<state.sets.length;i++){ if(state.sets[i].id===id) return state.sets[i]; }
+    return null;
+  }
+  function getDayItems(key){
+    var existing = state.schedule[key];
+    if(Array.isArray(existing)) return existing;
+    if(existing && typeof existing === "object"){
+      // migrate from the old asa/hiru/yoru bucket format
+      existing = (existing.asa||[]).concat(existing.hiru||[], existing.yoru||[]);
+    }else{
+      existing = [];
+    }
+    state.schedule[key] = existing;
+    return existing;
+  }
+
+  /* ================= speech ================= */
+  var jaVoice = null;
+  function pickVoice(){
+    if(!("speechSynthesis" in window)) return;
+    var voices = speechSynthesis.getVoices();
+    for(var i=0;i<voices.length;i++){
+      if(voices[i].lang && voices[i].lang.toLowerCase().indexOf("ja")===0){ jaVoice=voices[i]; break; }
+    }
+  }
+  if("speechSynthesis" in window){
+    pickVoice();
+    speechSynthesis.onvoiceschanged = pickVoice;
+  }
+  function speak(text){
+    if(!("speechSynthesis" in window) || !text) return;
+    try{
+      speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "ja-JP";
+      u.rate = 0.85;
+      u.pitch = 1.05;
+      if(jaVoice) u.voice = jaVoice;
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+
+  /* ================= ui state (not persisted) ================= */
+  var ui = { view:"day", date:new Date(), monthCursor:new Date(), weekCursor:new Date() };
+  var modalState = null; // {type:'addPicker'} | {type:'editPreset', presetId|null}
+
+  /* ================= rendering ================= */
+  var appEl = document.getElementById("app");
+  var modalRoot = document.getElementById("modal-root");
+
+  function render(){
+    var html = "";
+    html += renderTopbar();
+    html += '<div class="content" id="content">' + renderContent() + '</div>';
+    html += renderBottomNav();
+    appEl.innerHTML = html;
+    renderModal();
+    bindGestures();
+  }
+
+  function renderTopbar(){
+    if(ui.view === "day"){
+      var d = ui.date;
+      var relLabel = relativeDayLabel(d);
+      var bigText = relLabel ? relLabel : ((d.getMonth()+1) +'がつ'+ d.getDate() +'にち');
+      var subDate = relLabel ? '<div class="sub-date num">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>' : '';
+      return (
+        '<div class="topbar">' +
+          '<div class="topbar-row"><span class="app-title">よてい</span></div>' +
+          '<div class="date-nav">' +
+            '<button class="arrow-btn" data-action="day-prev" aria-label="まえのひ">◀</button>' +
+            '<div class="date-heading" data-swipe-zone="day">' +
+              '<div class="big">'+ bigText +'</div>' +
+              '<span class="weekday-chip">'+ WEEKDAY_LONG[d.getDay()] +'</span>' +
+              subDate +
+            '</div>' +
+            '<button class="arrow-btn" data-action="day-next" aria-label="つぎのひ">▶</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }
+    if(ui.view === "week"){
+      var ws = startOfWeekSun(ui.weekCursor), we = addDays(ws,6);
+      var label = (ws.getMonth()+1)+"/"+ws.getDate()+" 〜 "+(we.getMonth()+1)+"/"+we.getDate();
+      return (
+        '<div class="topbar">' +
+          '<div class="topbar-row"><span class="app-title">よてい・1しゅうかん</span></div>' +
+          '<div class="date-nav">' +
+            '<button class="arrow-btn" data-action="week-prev" aria-label="まえのしゅう">◀</button>' +
+            '<div class="month-heading num" data-swipe-zone="week">'+ label +'</div>' +
+            '<button class="arrow-btn" data-action="week-next" aria-label="つぎのしゅう">▶</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }
+    if(ui.view === "month"){
+      var m = ui.monthCursor;
+      return (
+        '<div class="topbar">' +
+          '<div class="topbar-row"><span class="app-title">よてい・1かげつ</span></div>' +
+          '<div class="date-nav">' +
+            '<button class="arrow-btn" data-action="month-prev" aria-label="まえのつき">◀</button>' +
+            '<div class="month-heading num" data-swipe-zone="month">'+ (m.getFullYear()) +'ねん '+ (m.getMonth()+1) +'がつ</div>' +
+            '<button class="arrow-btn" data-action="month-next" aria-label="つぎのつき">▶</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }
+    // presets
+    return (
+      '<div class="topbar">' +
+        '<div class="topbar-row"><span class="app-title">よく つかう よてい</span></div>' +
+      '</div>'
+    );
+  }
+
+  function renderIcon(icon, extraClass){
+    if(!icon) icon = {type:"emoji", value:"❓"};
+    if(icon.type === "photo"){
+      return '<img class="icon-photo '+(extraClass||"")+'" src="'+icon.value+'" alt="">';
+    }
+    return '<span class="icon-emoji '+(extraClass||"")+'">'+escapeHtml(icon.value)+'</span>';
+  }
+
+  function renderContent(){
+    if(ui.view === "day") return renderDayView();
+    if(ui.view === "week") return renderWeekView();
+    if(ui.view === "month") return renderMonthView();
+    return renderPresetsView();
+  }
+
+  function renderDayView(){
+    var key = formatKey(ui.date);
+    var items = getDayItems(key);
+    if(items.length === 0){
+      return (
+        '<div class="empty-state">' +
+          '<div class="face">🗓️</div>' +
+          '<p>きょうの よていは まだ ないよ</p>' +
+          '<button class="btn btn-primary" style="padding:1rem 1.6rem;" data-action="open-add">＋ よていを ふやす</button>' +
+        '</div>'
+      );
+    }
+    var html = '<ul class="day-list">';
+    items.forEach(function(item, index){
+      var preset = getPreset(item.presetId);
+      if(!preset) return;
+      html += (
+        '<li class="card'+(item.done?' is-done':'')+'" data-item-id="'+item.id+'">' +
+          '<div class="card-swipe-track">できた ✓</div>' +
+          '<div class="card-inner">' +
+            '<span class="order-badge num">'+(index+1)+'</span>' +
+            '<button class="card-body" data-role="card-body" data-item-id="'+item.id+'" data-speak="'+escapeHtml(preset.label)+'">' +
+              '<span class="icon-slot">'+ renderIcon(preset.icon) +'</span>' +
+              '<span class="card-label">'+ escapeHtml(preset.label) +'</span>' +
+              '<span class="speaker-hint">🔊</span>' +
+            '</button>' +
+            '<button class="drag-handle" data-role="drag-handle" data-item-id="'+item.id+'" aria-label="ならびかえ">⠿</button>' +
+          '</div>' +
+        '</li>'
+      );
+    });
+    html += '</ul>';
+    html += '<button class="band-add" data-action="open-add">＋ よていを ふやす</button>';
+    return html;
+  }
+
+  function renderWeekView(){
+    var ws = startOfWeekSun(ui.weekCursor);
+    var today = new Date();
+    var html = '<div class="week-grid">';
+    for(var i=0;i<7;i++){
+      var d = addDays(ws,i);
+      var key = formatKey(d);
+      var items = getDayItems(key);
+      html += '<button class="week-row'+(sameDay(d,today)?' is-today':'')+'" data-action="goto-day" data-date="'+key+'">';
+      html += '<span class="week-date"><span class="wd">'+WEEKDAY_SHORT[d.getDay()]+'</span><span class="dnum num">'+d.getDate()+'</span></span>';
+      html += '<span class="week-icons">';
+      if(items.length === 0){
+        html += '<span class="hint" style="align-self:center;">よてい なし</span>';
+      }else{
+        items.slice(0,6).forEach(function(item){
+          var preset = getPreset(item.presetId);
+          if(!preset) return;
+          html += '<span class="mini">'+ renderIcon(preset.icon) +'</span>';
+        });
+        if(items.length > 6) html += '<span class="more">+'+(items.length-6)+'</span>';
+      }
+      html += '</span></button>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderMonthView(){
+    var m = ui.monthCursor;
+    var firstOfMonth = new Date(m.getFullYear(), m.getMonth(), 1);
+    var gridStart = startOfWeekSun(firstOfMonth);
+    var today = new Date();
+    var html = '<div class="month-grid">';
+    WEEKDAY_SHORT.forEach(function(w){ html += '<div class="month-dow">'+w+'</div>'; });
+    for(var i=0;i<42;i++){
+      var d = addDays(gridStart, i);
+      var key = formatKey(d);
+      var count = getDayItems(key).length;
+      var isOther = d.getMonth() !== m.getMonth();
+      html += '<button class="month-cell'+(isOther?' is-other':'')+(sameDay(d,today)?' is-today':'')+'" data-action="goto-day" data-date="'+key+'">';
+      html += '<span class="dnum num">'+d.getDate()+'</span>';
+      if(count){
+        html += '<span class="month-count num">'+count+'</span>';
+      }
+      html += '</button>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderPresetsView(){
+    var html = "";
+    if(state.presets.length === 0){
+      html += '<p class="hint" style="font-size:1.1rem; margin:0 0 1rem;">＋を おして、よく つかう よていを とうろくしてね</p>';
+    }
+    html += '<div class="preset-grid">';
+    html += '<button class="preset-tile new" data-action="new-preset"><span class="icon-slot">＋</span><span class="label">あたらしい よてい</span></button>';
+    state.presets.forEach(function(p){
+      html += (
+        '<button class="preset-tile" data-action="edit-preset" data-preset-id="'+p.id+'">' +
+          '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
+          '<span class="label">'+ escapeHtml(p.label) +'</span>' +
+        '</button>'
+      );
+    });
+    html += '</div>';
+
+    html += '<h3 class="section-title">セット</h3>';
+    html += '<p class="hint" style="margin-top:-.4rem;">いくつかの よていを まとめて 1かいで ついかできます</p>';
+    html += '<div class="preset-grid">';
+    html += '<button class="preset-tile new" data-action="new-set"><span class="icon-slot">＋</span><span class="label">あたらしい セット</span></button>';
+    state.sets.forEach(function(s){
+      html += (
+        '<button class="preset-tile set-tile" data-action="edit-set" data-set-id="'+s.id+'">' +
+          '<span class="set-count num">'+s.presetIds.length+'</span>' +
+          '<span class="icon-slot">'+ renderIcon(s.icon) +'</span>' +
+          '<span class="label">'+ escapeHtml(s.label) +'</span>' +
+        '</button>'
+      );
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderBottomNav(){
+    function item(view, icon, label){
+      var iconHtml = icon ? '<span class="nicon">'+icon+'</span>' : '';
+      return '<button class="nav-btn'+(ui.view===view?' active':'')+'" data-action="switch-view" data-view="'+view+'">'+iconHtml+'<span class="nlabel">'+label+'</span></button>';
+    }
+    return (
+      '<nav class="bottom-nav"><div class="bottom-nav-inner">' +
+        item("day",null,"きょう") +
+        item("week",null,"しゅうかん") +
+        item("month",null,"つき") +
+        item("presets","⭐","よくつかう") +
+      '</div></nav>'
+    );
+  }
+
+  /* ================= modal rendering ================= */
+  function renderModal(){
+    if(!modalState){ modalRoot.innerHTML = ""; return; }
+    if(modalState.type === "addPicker"){
+      var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
+      html += '<div class="modal-head"><h2 class="modal-title">よていを ふやす</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
+      if(state.sets.length){
+        html += '<span class="field-label">セット(まとめて ついか)</span>';
+        html += '<div class="preset-grid">';
+        state.sets.forEach(function(s){
+          html += (
+            '<button class="preset-tile set-tile" data-action="add-set" data-set-id="'+s.id+'">' +
+              '<span class="set-count num">'+s.presetIds.length+'</span>' +
+          '<span class="icon-slot">'+ renderIcon(s.icon) +'</span>' +
+              '<span class="label">'+ escapeHtml(s.label) +'</span>' +
+            '</button>'
+          );
+        });
+        html += '</div>';
+        html += '<span class="field-label">よてい</span>';
+      }
+      html += '<div class="preset-grid">';
+      state.presets.forEach(function(p){
+        html += (
+          '<button class="preset-tile" data-action="add-item" data-preset-id="'+p.id+'">' +
+            '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
+            '<span class="label">'+ escapeHtml(p.label) +'</span>' +
+          '</button>'
+        );
+      });
+      html += '</div>';
+      html += '<div class="btn-row"><button class="btn btn-ghost" data-action="new-preset">＋ あたらしく つくる</button></div>';
+      html += '</div></div>';
+      modalRoot.innerHTML = html;
+      return;
+    }
+    if(modalState.type === "editPreset"){
+      var editing = modalState.presetId ? getPreset(modalState.presetId) : null;
+      var draft = modalState.draft;
+      var iconTab = draft.icon.type;
+      var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
+      html += '<div class="modal-head"><h2 class="modal-title">'+(editing?"よていを へんしゅう":"あたらしい よてい")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
+
+      html += '<span class="field-label">ひらがなの なまえ</span>';
+      html += '<input class="text-input" id="preset-label-input" type="text" value="'+escapeHtml(draft.label)+'" placeholder="れい:おふろ" maxlength="12">';
+      if(draft.label && /[^ぁ-んー\s]/.test(draft.label)){
+        html += '<div class="hint warn">ひらがなで にゅうりょくすると よみやすいよ</div>';
+      }
+
+      html += '<span class="field-label">マーク</span>';
+      html += '<div class="icon-tabs">';
+      html += '<button class="icon-tab'+(iconTab==="emoji"?" active":"")+'" data-action="icon-tab" data-tab="emoji">イラスト</button>';
+      html += '<button class="icon-tab'+(iconTab==="photo"?" active":"")+'" data-action="icon-tab" data-tab="photo">しゃしん</button>';
+      html += '</div>';
+
+      if(iconTab === "emoji"){
+        html += '<div class="emoji-grid">';
+        EMOJI_CHOICES.forEach(function(e){
+          html += '<button class="emoji-opt'+(draft.icon.type==="emoji" && draft.icon.value===e?" selected":"")+'" data-action="pick-emoji" data-emoji="'+e+'">'+e+'</button>';
+        });
+        html += '</div>';
+      }else{
+        html += '<div class="photo-picker">';
+        html += '<span class="photo-preview">'+(draft.icon.type==="photo" && draft.icon.value ? '<img src="'+draft.icon.value+'" alt="">' : "🖼️")+'</span>';
+        html += '<label class="file-btn">しゃしんを えらぶ<input type="file" accept="image/*" capture="environment" id="photo-input" style="display:none;"></label>';
+        html += '</div>';
+      }
+
+      html += '<div class="btn-row" style="margin-top:1.6rem;"><button class="btn btn-ghost" data-action="preview-speak">🔊 きいてみる</button></div>';
+
+      html += '<div class="btn-row">';
+      html += '<button class="btn btn-primary" data-action="save-preset">ほぞんする</button>';
+      html += '</div>';
+      if(editing){
+        html += '<div class="btn-row"><button class="btn btn-danger" data-action="delete-preset">この よていを けす</button></div>';
+      }
+
+      html += '</div></div>';
+      modalRoot.innerHTML = html;
+
+      var input = document.getElementById("preset-label-input");
+      if(input){
+        input.addEventListener("input", function(){
+          draft.label = input.value;
+        });
+        var focusInput = modalState._focusPending;
+        if(focusInput){ input.focus(); modalState._focusPending = false; }
+      }
+      var photoInput = document.getElementById("photo-input");
+      if(photoInput){
+        photoInput.addEventListener("change", function(ev){
+          var file = ev.target.files && ev.target.files[0];
+          if(!file) return;
+          resizeImageToDataUrl(file, 240, function(dataUrl){
+            draft.icon = {type:"photo", value:dataUrl};
+            renderModal();
+          });
+        });
+      }
+      return;
+    }
+    if(modalState.type === "editSet"){
+      var editingSet = modalState.setId ? getSet(modalState.setId) : null;
+      var sdraft = modalState.draft;
+      var sIconTab = sdraft.icon.type;
+      var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
+      html += '<div class="modal-head"><h2 class="modal-title">'+(editingSet?"セットを へんしゅう":"あたらしい セット")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
+
+      html += '<span class="field-label">ひらがなの なまえ</span>';
+      html += '<input class="text-input" id="set-label-input" type="text" value="'+escapeHtml(sdraft.label)+'" placeholder="れい:あさの したく" maxlength="14">';
+      if(sdraft.label && /[^ぁ-んー\s]/.test(sdraft.label)){
+        html += '<div class="hint warn">ひらがなで にゅうりょくすると よみやすいよ</div>';
+      }
+
+      html += '<span class="field-label">マーク</span>';
+      html += '<div class="icon-tabs">';
+      html += '<button class="icon-tab'+(sIconTab==="emoji"?" active":"")+'" data-action="set-icon-tab" data-tab="emoji">イラスト</button>';
+      html += '<button class="icon-tab'+(sIconTab==="photo"?" active":"")+'" data-action="set-icon-tab" data-tab="photo">しゃしん</button>';
+      html += '</div>';
+
+      if(sIconTab === "emoji"){
+        html += '<div class="emoji-grid">';
+        EMOJI_CHOICES.forEach(function(e){
+          html += '<button class="emoji-opt'+(sdraft.icon.type==="emoji" && sdraft.icon.value===e?" selected":"")+'" data-action="set-pick-emoji" data-emoji="'+e+'">'+e+'</button>';
+        });
+        html += '</div>';
+      }else{
+        html += '<div class="photo-picker">';
+        html += '<span class="photo-preview">'+(sdraft.icon.type==="photo" && sdraft.icon.value ? '<img src="'+sdraft.icon.value+'" alt="">' : "🖼️")+'</span>';
+        html += '<label class="file-btn">しゃしんを えらぶ<input type="file" accept="image/*" capture="environment" id="set-photo-input" style="display:none;"></label>';
+        html += '</div>';
+      }
+
+      html += '<span class="field-label">ふくまれる よてい(タップした じゅんに ついかされます)</span>';
+      if(state.presets.length === 0){
+        html += '<p class="hint">さきに「よく つかう」で よていを つくってね</p>';
+      }
+      html += '<div class="preset-grid">';
+      state.presets.forEach(function(p){
+        var order = sdraft.presetIds.indexOf(p.id);
+        html += (
+          '<button class="preset-tile'+(order>-1?" selected":"")+'" data-action="toggle-set-preset" data-preset-id="'+p.id+'">' +
+            (order>-1 ? '<span class="order-chip num">'+(order+1)+'</span>' : '') +
+            '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
+            '<span class="label">'+ escapeHtml(p.label) +'</span>' +
+          '</button>'
+        );
+      });
+      html += '</div>';
+
+      html += '<div class="btn-row" style="margin-top:1.6rem;"><button class="btn btn-ghost" data-action="preview-speak-set">🔊 きいてみる</button></div>';
+
+      html += '<div class="btn-row">';
+      html += '<button class="btn btn-primary" data-action="save-set">ほぞんする</button>';
+      html += '</div>';
+      if(editingSet){
+        html += '<div class="btn-row"><button class="btn btn-danger" data-action="delete-set">この セットを けす</button></div>';
+      }
+
+      html += '</div></div>';
+      modalRoot.innerHTML = html;
+
+      var sInput = document.getElementById("set-label-input");
+      if(sInput){
+        sInput.addEventListener("input", function(){
+          sdraft.label = sInput.value;
+        });
+        if(modalState._focusPending){ sInput.focus(); modalState._focusPending = false; }
+      }
+      var sPhotoInput = document.getElementById("set-photo-input");
+      if(sPhotoInput){
+        sPhotoInput.addEventListener("change", function(ev){
+          var file = ev.target.files && ev.target.files[0];
+          if(!file) return;
+          resizeImageToDataUrl(file, 240, function(dataUrl){
+            sdraft.icon = {type:"photo", value:dataUrl};
+            renderModal();
+          });
+        });
+      }
+      return;
+    }
+  }
+
+  function resizeImageToDataUrl(file, maxDim, cb){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        cb(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /* ================= actions ================= */
+  function openAddPicker(){ modalState = {type:"addPicker"}; renderModal(); }
+  function openPresetEditor(presetId, focus){
+    var preset = presetId ? getPreset(presetId) : null;
+    modalState = {
+      type:"editPreset",
+      presetId: presetId || null,
+      draft: preset ? {label:preset.label, icon:{type:preset.icon.type, value:preset.icon.value}} : {label:"", icon:{type:"emoji", value:EMOJI_CHOICES[0]}},
+      _focusPending: !!focus
+    };
+    renderModal();
+  }
+  function openSetEditor(setId, focus){
+    var set = setId ? getSet(setId) : null;
+    modalState = {
+      type:"editSet",
+      setId: setId || null,
+      draft: set
+        ? {label:set.label, icon:{type:set.icon.type, value:set.icon.value}, presetIds:set.presetIds.slice()}
+        : {label:"", icon:{type:"emoji", value:EMOJI_CHOICES[0]}, presetIds:[]},
+      _focusPending: !!focus
+    };
+    renderModal();
+  }
+  function closeModal(){ modalState = null; renderModal(); }
+
+  function addItemToDay(presetId){
+    var key = formatKey(ui.date);
+    var items = getDayItems(key);
+    items.push({id:uid(), presetId:presetId, done:false});
+    saveState();
+    var preset = getPreset(presetId);
+    modalState = null;
+    render();
+    if(preset) speak(preset.label);
+  }
+
+  function addSetToDay(setId){
+    var set = getSet(setId);
+    if(!set) return;
+    var key = formatKey(ui.date);
+    var items = getDayItems(key);
+    set.presetIds.forEach(function(pid){
+      if(getPreset(pid)) items.push({id:uid(), presetId:pid, done:false});
+    });
+    saveState();
+    modalState = null;
+    render();
+    speak(set.label);
+  }
+
+  function toggleDoneAnimated(cardEl, itemId){
+    var key = formatKey(ui.date);
+    var items = getDayItems(key);
+    var found = null;
+    items.forEach(function(it){ if(it.id===itemId) found = it; });
+    if(!found) return;
+    found.done = !found.done;
+    saveState();
+    render();
+  }
+
+  function reorderItem(itemId, newIndex){
+    var key = formatKey(ui.date);
+    var list = getDayItems(key);
+    var idx = -1;
+    for(var i=0;i<list.length;i++){ if(list[i].id===itemId){ idx=i; break; } }
+    if(idx===-1) return;
+    var it = list.splice(idx,1)[0];
+    newIndex = Math.max(0, Math.min(list.length, newIndex));
+    list.splice(newIndex,0,it);
+    saveState();
+  }
+
+  function savePresetFromDraft(){
+    if(!modalState || modalState.type !== "editPreset") return;
+    var draft = modalState.draft;
+    var label = (draft.label||"").trim();
+    if(!label){ speak("なまえを にゅうりょくしてね"); return; }
+    if(modalState.presetId){
+      var p = getPreset(modalState.presetId);
+      p.label = label; p.icon = draft.icon;
+    }else{
+      state.presets.push({id:uid(), label:label, icon:draft.icon});
+    }
+    saveState();
+    modalState = null;
+    render();
+  }
+  function deleteCurrentPreset(){
+    if(!modalState || !modalState.presetId) return;
+    var id = modalState.presetId;
+    state.presets = state.presets.filter(function(p){ return p.id!==id; });
+    Object.keys(state.schedule).forEach(function(key){
+      state.schedule[key] = getDayItems(key).filter(function(it){ return it.presetId!==id; });
+    });
+    state.sets.forEach(function(s){
+      s.presetIds = s.presetIds.filter(function(pid){ return pid!==id; });
+    });
+    saveState();
+    modalState = null;
+    render();
+  }
+
+  function saveSetFromDraft(){
+    if(!modalState || modalState.type !== "editSet") return;
+    var draft = modalState.draft;
+    var label = (draft.label||"").trim();
+    if(!label){ speak("なまえを にゅうりょくしてね"); return; }
+    if(!draft.presetIds.length){ speak("よていを 1つ いじょう えらんでね"); return; }
+    if(modalState.setId){
+      var s = getSet(modalState.setId);
+      s.label = label; s.icon = draft.icon; s.presetIds = draft.presetIds.slice();
+    }else{
+      state.sets.push({id:uid(), label:label, icon:draft.icon, presetIds:draft.presetIds.slice()});
+    }
+    saveState();
+    modalState = null;
+    render();
+  }
+  function deleteCurrentSet(){
+    if(!modalState || !modalState.setId) return;
+    var id = modalState.setId;
+    state.sets = state.sets.filter(function(s){ return s.id!==id; });
+    saveState();
+    modalState = null;
+    render();
+  }
+
+  /* ================= event delegation ================= */
+  document.addEventListener("click", function(e){
+    var el = e.target.closest("[data-action]");
+    if(!el) return;
+    var action = el.getAttribute("data-action");
+    if(action === "day-prev"){ ui.date = addDays(ui.date,-1); render(); return; }
+    if(action === "day-next"){ ui.date = addDays(ui.date,1); render(); return; }
+    if(action === "week-prev"){ ui.weekCursor = addDays(ui.weekCursor,-7); render(); return; }
+    if(action === "week-next"){ ui.weekCursor = addDays(ui.weekCursor,7); render(); return; }
+    if(action === "month-prev"){ ui.monthCursor = addMonths(ui.monthCursor,-1); render(); return; }
+    if(action === "month-next"){ ui.monthCursor = addMonths(ui.monthCursor,1); render(); return; }
+    if(action === "switch-view"){
+      var v = el.getAttribute("data-view");
+      if(v === "day"){ ui.date = new Date(); }
+      ui.view = v;
+      render();
+      return;
+    }
+    if(action === "goto-day"){
+      ui.date = keyToDate(el.getAttribute("data-date"));
+      ui.view = "day";
+      render();
+      return;
+    }
+    if(action === "open-add"){ openAddPicker(); return; }
+    if(action === "new-preset"){ openPresetEditor(null, true); return; }
+    if(action === "edit-preset"){ openPresetEditor(el.getAttribute("data-preset-id"), false); return; }
+    if(action === "add-item"){
+      addItemToDay(el.getAttribute("data-preset-id"));
+      return;
+    }
+    if(action === "new-set"){ openSetEditor(null, true); return; }
+    if(action === "edit-set"){ openSetEditor(el.getAttribute("data-set-id"), false); return; }
+    if(action === "add-set"){ addSetToDay(el.getAttribute("data-set-id")); return; }
+    if(action === "toggle-set-preset"){
+      if(modalState){
+        var pid = el.getAttribute("data-preset-id");
+        var ids = modalState.draft.presetIds;
+        var at = ids.indexOf(pid);
+        if(at > -1){ ids.splice(at,1); } else { ids.push(pid); }
+      }
+      renderModal();
+      return;
+    }
+    if(action === "set-icon-tab"){
+      if(modalState) modalState.draft.icon = modalState.draft.icon.type === el.getAttribute("data-tab")
+        ? modalState.draft.icon
+        : {type:el.getAttribute("data-tab"), value: el.getAttribute("data-tab")==="emoji" ? EMOJI_CHOICES[0] : ""};
+      renderModal();
+      return;
+    }
+    if(action === "set-pick-emoji"){
+      if(modalState) modalState.draft.icon = {type:"emoji", value:el.getAttribute("data-emoji")};
+      renderModal();
+      return;
+    }
+    if(action === "preview-speak-set"){
+      if(modalState) speak(modalState.draft.label || "");
+      return;
+    }
+    if(action === "save-set"){ saveSetFromDraft(); return; }
+    if(action === "delete-set"){ deleteCurrentSet(); return; }
+    if(action === "close-modal"){ if(e.target===el) closeModal(); return; }
+    if(action === "icon-tab"){
+      if(modalState) modalState.draft.icon = modalState.draft.icon.type === el.getAttribute("data-tab")
+        ? modalState.draft.icon
+        : {type:el.getAttribute("data-tab"), value: el.getAttribute("data-tab")==="emoji" ? EMOJI_CHOICES[0] : ""};
+      renderModal();
+      return;
+    }
+    if(action === "pick-emoji"){
+      if(modalState) modalState.draft.icon = {type:"emoji", value:el.getAttribute("data-emoji")};
+      renderModal();
+      return;
+    }
+    if(action === "preview-speak"){
+      if(modalState) speak(modalState.draft.label || "");
+      return;
+    }
+    if(action === "save-preset"){ savePresetFromDraft(); return; }
+    if(action === "delete-preset"){ deleteCurrentPreset(); return; }
+  });
+
+  /* ================= gestures ================= */
+  function bindGestures(){
+    bindSwipeZone();
+    bindCardSwipes();
+    bindDragHandles();
+  }
+
+  function bindSwipeZone(){
+    var content = document.getElementById("content");
+    if(!content) return;
+    var startX=0, startY=0, tracking=false, horizontal=false;
+    content.addEventListener("pointerdown", function(e){
+      if(e.target.closest(".card") || e.target.closest(".drag-handle")) return;
+      startX = e.clientX; startY = e.clientY; tracking = true; horizontal = false;
+    });
+    content.addEventListener("pointermove", function(e){
+      if(!tracking) return;
+      var dx = e.clientX - startX, dy = e.clientY - startY;
+      if(!horizontal && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.4){ horizontal = true; }
+    });
+    function finish(e){
+      if(!tracking) return;
+      tracking = false;
+      if(!horizontal) return;
+      var dx = e.clientX - startX;
+      if(Math.abs(dx) < 60) return;
+      var dir = dx < 0 ? 1 : -1;
+      if(ui.view === "day"){ ui.date = addDays(ui.date, dir); render(); }
+      else if(ui.view === "week"){ ui.weekCursor = addDays(ui.weekCursor, dir*7); render(); }
+      else if(ui.view === "month"){ ui.monthCursor = addMonths(ui.monthCursor, dir); render(); }
+    }
+    content.addEventListener("pointerup", finish);
+    content.addEventListener("pointercancel", function(){ tracking=false; });
+  }
+
+  function bindCardSwipes(){
+    var cards = document.querySelectorAll(".card");
+    cards.forEach(function(card){
+      var body = card.querySelector('[data-role="card-body"]');
+      var inner = card.querySelector(".card-inner");
+      if(!body || !inner) return;
+      var startX=0, startY=0, dragging=false, moved=false, pointerId=null;
+      body.addEventListener("pointerdown", function(e){
+        startX = e.clientX; startY = e.clientY; dragging = true; moved = false; pointerId = e.pointerId;
+        try{ body.setPointerCapture(pointerId); }catch(err){}
+      });
+      body.addEventListener("pointermove", function(e){
+        if(!dragging) return;
+        var dx = e.clientX - startX, dy = e.clientY - startY;
+        if(Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)){
+          moved = true;
+          var clamped = Math.max(-140, Math.min(0, dx));
+          inner.style.transform = "translateX("+clamped+"px)";
+        }
+      });
+      function endDrag(e){
+        if(!dragging) return;
+        dragging = false;
+        var dx = (e.clientX||startX) - startX;
+        inner.style.transition = "transform .18s ease";
+        inner.style.transform = "translateX(0)";
+        setTimeout(function(){ if(inner) inner.style.transition=""; }, 200);
+        if(moved){
+          if(dx < -70){
+            toggleDoneAnimated(card, card.getAttribute("data-item-id"));
+          }
+          return;
+        }
+        // treat as tap
+        var label = body.getAttribute("data-speak");
+        speak(label);
+      }
+      body.addEventListener("pointerup", endDrag);
+      body.addEventListener("pointercancel", function(){ dragging=false; inner.style.transform="translateX(0)"; });
+    });
+  }
+
+  function bindDragHandles(){
+    document.querySelectorAll('[data-role="drag-handle"]').forEach(function(handle){
+      var card = handle.closest(".card");
+      var list = handle.closest(".day-list");
+      if(!card || !list) return;
+      var startY=0, dragging=false, placeholderIndex=0;
+      handle.addEventListener("pointerdown", function(e){
+        startY = e.clientY; dragging = true;
+        card.classList.add("dragging");
+        card.style.position = "relative";
+        card.style.zIndex = "5";
+        try{ handle.setPointerCapture(e.pointerId); }catch(err){}
+      });
+      handle.addEventListener("pointermove", function(e){
+        if(!dragging) return;
+        var dy = e.clientY - startY;
+        card.style.transform = "translateY("+dy+"px)";
+        var siblings = Array.prototype.slice.call(list.children).filter(function(c){ return c!==card; });
+        for(var i=0;i<siblings.length;i++){
+          var rect = siblings[i].getBoundingClientRect();
+          var mid = rect.top + rect.height/2;
+          if(e.clientY < mid){
+            if(siblings[i].previousSibling !== card) list.insertBefore(card, siblings[i]);
+            card.style.transform = "translateY(0)";
+            startY = e.clientY;
+            break;
+          }else if(i === siblings.length-1){
+            if(list.lastChild !== card) list.appendChild(card);
+            card.style.transform = "translateY(0)";
+            startY = e.clientY;
+          }
+        }
+      });
+      function endDragHandle(){
+        if(!dragging) return;
+        dragging = false;
+        card.classList.remove("dragging");
+        card.style.transform = "";
+        card.style.zIndex = "";
+        var order = Array.prototype.slice.call(list.children).map(function(c){ return c.getAttribute("data-item-id"); });
+        var itemId = card.getAttribute("data-item-id");
+        reorderItem(itemId, order.indexOf(itemId));
+        render();
+      }
+      handle.addEventListener("pointerup", endDragHandle);
+      handle.addEventListener("pointercancel", endDragHandle);
+    });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
