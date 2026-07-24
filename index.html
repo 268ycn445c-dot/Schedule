@@ -274,7 +274,7 @@
   }
   .chip.active{background:var(--sora); color:var(--sora-ink); border-color:var(--sora);}
 
-  .symbol-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; margin-top:.6rem; max-height:16rem; overflow-y:auto;}
+  .symbol-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; margin-top:.6rem;}
   .symbol-opt{aspect-ratio:1; border-radius:12px; border:1px solid var(--line); background:var(--paper-raised); padding:.3rem; overflow:hidden;}
   .symbol-opt img{width:100%; height:100%; object-fit:contain;}
   .symbol-opt.selected{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 25%, var(--paper-raised));}
@@ -592,8 +592,7 @@
     if(q){ pool = pool.filter(function(s){ return s.label.indexOf(q) > -1; }); }
     if(!q && !genre){ return '<p class="hint symbol-hint">ことばを にゅうりょくするか、ジャンルを えらんでね</p>'; }
     if(!pool.length){ return '<p class="hint symbol-hint">みつからなかったよ</p>'; }
-    var limited = pool.slice(0,80);
-    var html = limited.map(function(s){
+    return pool.map(function(s){
       var selected = draft.icon.type==="symbol" && draft.icon.value===s.file;
       return (
         '<button class="symbol-opt'+(selected?" selected":"")+'" data-action="pick-symbol" data-file="'+escapeHtml(s.file)+'" title="'+escapeHtml(s.label)+'">' +
@@ -601,10 +600,6 @@
         '</button>'
       );
     }).join("");
-    if(pool.length > limited.length){
-      html += '<p class="hint symbol-hint">ほかにも '+(pool.length-limited.length)+' こ あるよ。ことばで しぼりこんでね</p>';
-    }
-    return html;
   }
   function refreshSymbolResults(){
     var container = document.getElementById("symbol-results");
