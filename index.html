@@ -19,6 +19,7 @@
     --yoru:#4A4670;          /* よる・たそがれの色 */
     --yoru-ink:#F1EFFA;
     --done:#4F8F5B;          /* できた!の色(意味色。アクセントとは別) */
+    --holiday:#C0392B;       /* にちようび・しゅくじつの色 */
     --shadow: 0 10px 24px -12px rgba(34,40,43,.28), 0 2px 6px -2px rgba(34,40,43,.12);
     --radius-card: 26px;
     --radius-pill: 999px;
@@ -40,19 +41,20 @@
       --yoru:#8D87C4;
       --yoru-ink:#221F35;
       --done:#7CC48A;
+      --holiday:#E5776B;
       --shadow: 0 10px 24px -12px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.4);
     }
   }
   :root[data-theme="dark"]{
     --paper:#1B2023; --paper-raised:#262C2F; --ink:#EEF1F1; --ink-soft:#A9B7BA; --line:#333C3F;
     --accent:#F2B25C; --accent-ink:#2B1B02; --sora:#5FB2CC; --sora-ink:#0E2126;
-    --yoru:#8D87C4; --yoru-ink:#221F35; --done:#7CC48A;
+    --yoru:#8D87C4; --yoru-ink:#221F35; --done:#7CC48A; --holiday:#E5776B;
     --shadow: 0 10px 24px -12px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.4);
   }
   :root[data-theme="light"]{
     --paper:#F2F6F6; --paper-raised:#FFFFFF; --ink:#22282B; --ink-soft:#5B6A6E; --line:#D7E2E2;
     --accent:#F2A63B; --accent-ink:#5C3B0A; --sora:#2E7C93; --sora-ink:#EAF6FA;
-    --yoru:#4A4670; --yoru-ink:#F1EFFA; --done:#4F8F5B;
+    --yoru:#4A4670; --yoru-ink:#F1EFFA; --done:#4F8F5B; --holiday:#C0392B;
     --shadow: 0 10px 24px -12px rgba(34,40,43,.28), 0 2px 6px -2px rgba(34,40,43,.12);
   }
 
@@ -172,6 +174,8 @@
   /* ---------- month view ---------- */
   .month-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:.4rem;}
   .month-dow{text-align:center; font-size:.9rem; color:var(--ink-soft); font-weight:700; padding-bottom:.3rem;}
+  .month-dow.is-sat{color:var(--sora);}
+  .month-dow.is-sun{color:var(--holiday);}
   .month-cell{
     min-height:4.4rem; border-radius:14px; border:1px solid var(--line); background:var(--paper-raised);
     padding:.3rem; display:flex; flex-direction:column; gap:.2rem; text-align:left;
@@ -179,6 +183,8 @@
   .month-cell.is-other{opacity:.35;}
   .month-cell.is-today{outline:3px solid var(--accent);}
   .month-cell .dnum{font-size:1.05rem; align-self:flex-end;}
+  .month-cell .dnum.is-sat{color:var(--sora);}
+  .month-cell .dnum.is-sun{color:var(--holiday);}
   .month-count{
     align-self:flex-start; margin-top:auto; min-width:1.5rem; text-align:center; padding:.1rem .35rem;
     border-radius:var(--radius-pill); background:var(--accent); color:var(--accent-ink); font-size:.85rem; font-weight:700;
@@ -305,6 +311,66 @@
   var startOfWeekSun = function(d){ var r=new Date(d); r.setDate(r.getDate()-r.getDay()); return r; };
   var WEEKDAY_LONG = ["にちようび","げつようび","かようび","すいようび","もくようび","きんようび","どようび"];
   var WEEKDAY_SHORT = ["にち","げつ","か","すい","もく","きん","ど"];
+
+  /* ---- japanese national holidays (approximate, valid for 1980-2099) ---- */
+  var holidayCache = {};
+  function mdKey(m,d){ return pad2(m)+"-"+pad2(d); }
+  function nthMonday(year, month, n){
+    var dow = new Date(year, month-1, 1).getDay();
+    var firstMonday = 1 + ((8 - dow) % 7);
+    return firstMonday + (n-1)*7;
+  }
+  function shunbunDay(year){ return Math.floor(20.8431 + 0.242194*(year-1980) - Math.floor((year-1980)/4)); }
+  function shuubunDay(year){ return Math.floor(23.2488 + 0.242194*(year-1980) - Math.floor((year-1980)/4)); }
+  function computeHolidayMap(year){
+    var map = {};
+    map[mdKey(1,1)] = "元日";
+    map[mdKey(1, nthMonday(year,1,2))] = "成人の日";
+    map[mdKey(2,11)] = "建国記念の日";
+    if(year >= 2020) map[mdKey(2,23)] = "天皇誕生日";
+    map[mdKey(3, shunbunDay(year))] = "春分の日";
+    map[mdKey(4,29)] = "昭和の日";
+    map[mdKey(5,3)] = "憲法記念日";
+    map[mdKey(5,4)] = "みどりの日";
+    map[mdKey(5,5)] = "こどもの日";
+    map[mdKey(7, nthMonday(year,7,3))] = "海の日";
+    map[mdKey(8,11)] = "山の日";
+    map[mdKey(9, nthMonday(year,9,3))] = "敬老の日";
+    map[mdKey(9, shuubunDay(year))] = "秋分の日";
+    map[mdKey(10, nthMonday(year,10,2))] = "スポーツの日";
+    map[mdKey(11,3)] = "文化の日";
+    map[mdKey(11,23)] = "勤労感謝の日";
+
+    // 振替休日: a holiday on Sunday pushes to the next non-holiday day
+    Object.keys(map).forEach(function(k){
+      var parts = k.split("-"); var m = +parts[0], d = +parts[1];
+      if(new Date(year, m-1, d).getDay() === 0){
+        var next = new Date(year, m-1, d);
+        do{ next.setDate(next.getDate()+1); }while(map[mdKey(next.getMonth()+1, next.getDate())]);
+        map[mdKey(next.getMonth()+1, next.getDate())] = "振替休日";
+      }
+    });
+    // 国民の休日: a weekday sandwiched between two holidays becomes a holiday
+    for(var m=1; m<=12; m++){
+      var daysInMonth = new Date(year, m, 0).getDate();
+      for(var d=2; d<daysInMonth; d++){
+        var k = mdKey(m,d);
+        if(map[k]) continue;
+        var dateObj = new Date(year, m-1, d);
+        if(dateObj.getDay() === 0) continue;
+        var prev = new Date(year, m-1, d-1), next = new Date(year, m-1, d+1);
+        if(map[mdKey(prev.getMonth()+1, prev.getDate())] && map[mdKey(next.getMonth()+1, next.getDate())]){
+          map[k] = "国民の休日";
+        }
+      }
+    }
+    return map;
+  }
+  function isHoliday(d){
+    var year = d.getFullYear();
+    if(!holidayCache[year]) holidayCache[year] = computeHolidayMap(year);
+    return !!holidayCache[year][mdKey(d.getMonth()+1, d.getDate())];
+  }
 
   var EMOJI_CHOICES = ["☀️","🌙","⏰","🍚","🍞","🍙","🍜","🍽️","🥛","🍎","🍪","🪥","🚿","🛁","👕","👖","🧦","👟","🎒","📚","✏️","🖍️","🎨","🎵","⚽","🎮","📺","🚗","🚌","🚃","🏥","💊","🦷","🧸","🐶","🐱","🌳","🏫","🏠","🛏️","😴","🎉","🎂","💧","🧻","🧹","📞","🧴","🚻"];
 
@@ -543,14 +609,18 @@
     var gridStart = startOfWeekSun(firstOfMonth);
     var today = new Date();
     var html = '<div class="month-grid">';
-    WEEKDAY_SHORT.forEach(function(w){ html += '<div class="month-dow">'+w+'</div>'; });
+    WEEKDAY_SHORT.forEach(function(w,idx){
+      var cls = idx===0 ? ' is-sun' : (idx===6 ? ' is-sat' : '');
+      html += '<div class="month-dow'+cls+'">'+w+'</div>';
+    });
     for(var i=0;i<42;i++){
       var d = addDays(gridStart, i);
       var key = formatKey(d);
       var count = getDayItems(key).length;
       var isOther = d.getMonth() !== m.getMonth();
+      var dowCls = (d.getDay()===0 || isHoliday(d)) ? ' is-sun' : (d.getDay()===6 ? ' is-sat' : '');
       html += '<button class="month-cell'+(isOther?' is-other':'')+(sameDay(d,today)?' is-today':'')+'" data-action="goto-day" data-date="'+key+'">';
-      html += '<span class="dnum num">'+d.getDate()+'</span>';
+      html += '<span class="dnum num'+dowCls+'">'+d.getDate()+'</span>';
       if(count){
         html += '<span class="month-count num">'+count+'</span>';
       }
