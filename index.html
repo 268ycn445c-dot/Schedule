@@ -145,20 +145,29 @@
   }
   .band-add:active{background:var(--paper-raised);}
 
-  /* ---------- week view ---------- */
-  .week-grid{display:flex; flex-direction:column; gap:.7rem;}
-  .week-row{
-    display:flex; align-items:center; gap:.8rem; padding:.7rem .9rem; border-radius:20px;
-    background:var(--paper-raised); border:1px solid var(--line); box-shadow:var(--shadow);
+  /* ---------- three-day view ---------- */
+  .threeday-grid{display:flex; gap:.6rem; align-items:flex-start;}
+  .threeday-col{
+    flex:1; min-width:0; display:flex; flex-direction:column; gap:.5rem;
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:20px; padding:.6rem .4rem; box-shadow:var(--shadow);
   }
-  .week-row.is-today{outline:3px solid var(--accent);}
-  .week-date{flex:none; width:4rem; text-align:center;}
-  .week-date .wd{display:block; font-size:.95rem; color:var(--ink-soft); font-weight:700;}
-  .week-date .dnum{display:block; font-size:1.7rem; line-height:1;}
-  .week-icons{flex:1; display:flex; gap:.4rem; overflow-x:auto; padding:.15rem 0;}
-  .week-icons .mini{flex:none; width:2.6rem; height:2.6rem; border-radius:12px; background:var(--paper); display:flex; align-items:center; justify-content:center; font-size:1.4rem; overflow:hidden;}
-  .week-icons .mini img{width:100%; height:100%; object-fit:cover;}
-  .week-icons .more{flex:none; width:2.6rem; height:2.6rem; border-radius:12px; background:var(--line); display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:700; color:var(--ink-soft);}
+  .threeday-head{
+    display:flex; flex-direction:column; align-items:center; gap:.1rem; background:none; border:none;
+    padding:.3rem 0 .5rem; border-bottom:1px solid var(--line); width:100%;
+  }
+  .threeday-head .td-label{font-family:var(--font-display); font-size:1.15rem; font-weight:700;}
+  .threeday-head .td-date{font-size:.8rem; color:var(--ink-soft);}
+  .threeday-empty{text-align:center; font-size:.85rem; padding:.6rem 0;}
+  .threeday-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.5rem;}
+  .threeday-item button{
+    width:100%; display:flex; flex-direction:column; align-items:center; gap:.3rem; padding:.4rem .2rem;
+    background:none; border:none; text-align:center;
+  }
+  .threeday-item.is-done button{opacity:.5;}
+  .threeday-item.is-done .td-item-label{text-decoration:line-through;}
+  .icon-slot.sm{width:2.6rem; height:2.6rem; border-radius:12px;}
+  .icon-slot.sm .icon-emoji{font-size:1.5rem;}
+  .td-item-label{font-family:var(--font-display); font-size:.92rem; line-height:1.2; word-break:break-word;}
 
   /* ---------- month view ---------- */
   .month-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:.4rem;}
@@ -372,7 +381,7 @@
   }
 
   /* ================= ui state (not persisted) ================= */
-  var ui = { view:"day", date:new Date(), monthCursor:new Date(), weekCursor:new Date() };
+  var ui = { view:"day", date:new Date(), monthCursor:new Date() };
   var modalState = null; // {type:'addPicker'} | {type:'editPreset', presetId|null}
 
   /* ================= rendering ================= */
@@ -410,17 +419,10 @@
         '</div>'
       );
     }
-    if(ui.view === "week"){
-      var ws = startOfWeekSun(ui.weekCursor), we = addDays(ws,6);
-      var label = (ws.getMonth()+1)+"/"+ws.getDate()+" 〜 "+(we.getMonth()+1)+"/"+we.getDate();
+    if(ui.view === "3day"){
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・1しゅうかん</span></div>' +
-          '<div class="date-nav">' +
-            '<button class="arrow-btn" data-action="week-prev" aria-label="まえのしゅう">◀</button>' +
-            '<div class="month-heading num" data-swipe-zone="week">'+ label +'</div>' +
-            '<button class="arrow-btn" data-action="week-next" aria-label="つぎのしゅう">▶</button>' +
-          '</div>' +
+          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・みっかかん</span></div>' +
         '</div>'
       );
     }
@@ -455,7 +457,7 @@
 
   function renderContent(){
     if(ui.view === "day") return renderDayView();
-    if(ui.view === "week") return renderWeekView();
+    if(ui.view === "3day") return renderThreeDayView();
     if(ui.view === "month") return renderMonthView();
     return renderPresetsView();
   }
@@ -496,28 +498,40 @@
     return html;
   }
 
-  function renderWeekView(){
-    var ws = startOfWeekSun(ui.weekCursor);
+  function renderThreeDayView(){
     var today = new Date();
-    var html = '<div class="week-grid">';
-    for(var i=0;i<7;i++){
-      var d = addDays(ws,i);
+    var html = '<div class="threeday-grid">';
+    for(var i=0;i<3;i++){
+      var d = addDays(today, i);
       var key = formatKey(d);
       var items = getDayItems(key);
-      html += '<button class="week-row'+(sameDay(d,today)?' is-today':'')+'" data-action="goto-day" data-date="'+key+'">';
-      html += '<span class="week-date"><span class="wd">'+WEEKDAY_SHORT[d.getDay()]+'</span><span class="dnum num">'+d.getDate()+'</span></span>';
-      html += '<span class="week-icons">';
+      var label = relativeDayLabel(d) || ((d.getMonth()+1)+'/'+d.getDate());
+      html += '<section class="threeday-col">';
+      html += (
+        '<button class="threeday-head" data-action="goto-day" data-date="'+key+'">' +
+          '<span class="td-label">'+label+'</span>' +
+          '<span class="td-date num">'+(d.getMonth()+1)+'/'+d.getDate()+'</span>' +
+        '</button>'
+      );
       if(items.length === 0){
-        html += '<span class="hint" style="align-self:center;">よてい なし</span>';
+        html += '<p class="threeday-empty hint">よてい なし</p>';
       }else{
-        items.slice(0,6).forEach(function(item){
+        html += '<ul class="threeday-list">';
+        items.forEach(function(item){
           var preset = getPreset(item.presetId);
           if(!preset) return;
-          html += '<span class="mini">'+ renderIcon(preset.icon) +'</span>';
+          html += (
+            '<li class="threeday-item'+(item.done?' is-done':'')+'">' +
+              '<button data-action="speak-item" data-speak="'+escapeHtml(preset.label)+'">' +
+                '<span class="icon-slot sm">'+ renderIcon(preset.icon) +'</span>' +
+                '<span class="td-item-label">'+ escapeHtml(preset.label) +'</span>' +
+              '</button>' +
+            '</li>'
+          );
         });
-        if(items.length > 6) html += '<span class="more">+'+(items.length-6)+'</span>';
+        html += '</ul>';
       }
-      html += '</span></button>';
+      html += '</section>';
     }
     html += '</div>';
     return html;
@@ -588,7 +602,7 @@
     return (
       '<nav class="bottom-nav"><div class="bottom-nav-inner">' +
         item("day",null,"きょう") +
-        item("week",null,"しゅうかん") +
+        item("3day",null,"みっかかん") +
         item("month",null,"つき") +
         item("presets","⭐","よくつかう") +
       '</div></nav>'
@@ -933,8 +947,7 @@
     var action = el.getAttribute("data-action");
     if(action === "day-prev"){ ui.date = addDays(ui.date,-1); render(); return; }
     if(action === "day-next"){ ui.date = addDays(ui.date,1); render(); return; }
-    if(action === "week-prev"){ ui.weekCursor = addDays(ui.weekCursor,-7); render(); return; }
-    if(action === "week-next"){ ui.weekCursor = addDays(ui.weekCursor,7); render(); return; }
+    if(action === "speak-item"){ speak(el.getAttribute("data-speak")); return; }
     if(action === "month-prev"){ ui.monthCursor = addMonths(ui.monthCursor,-1); render(); return; }
     if(action === "month-next"){ ui.monthCursor = addMonths(ui.monthCursor,1); render(); return; }
     if(action === "switch-view"){
@@ -1037,7 +1050,6 @@
       if(Math.abs(dx) < 60) return;
       var dir = dx < 0 ? 1 : -1;
       if(ui.view === "day"){ ui.date = addDays(ui.date, dir); render(); }
-      else if(ui.view === "week"){ ui.weekCursor = addDays(ui.weekCursor, dir*7); render(); }
       else if(ui.view === "month"){ ui.monthCursor = addMonths(ui.monthCursor, dir); render(); }
     }
     content.addEventListener("pointerup", finish);
