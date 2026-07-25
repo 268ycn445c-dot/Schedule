@@ -262,6 +262,16 @@
   .emoji-opt{aspect-ratio:1; font-size:1.6rem; border-radius:12px; border:1px solid var(--line); background:var(--paper-raised);}
   .emoji-opt.selected{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 25%, var(--paper-raised));}
 
+  .crop-viewport{
+    width:16rem; height:16rem; max-width:100%; margin:1rem auto; border-radius:24px; overflow:hidden;
+    position:relative; background:var(--paper); border:1px solid var(--line); touch-action:none;
+  }
+  .crop-viewport img{position:absolute; top:0; left:0; transform-origin:top left; user-select:none; -webkit-user-drag:none;}
+  .crop-zoom-row{display:flex; align-items:center; gap:.6rem; padding:0 .5rem;}
+  .crop-zoom-row span{font-size:1.3rem; flex:none;}
+  .crop-zoom-row input[type="range"]{flex:1;}
+  .crop-hint{text-align:center; margin-top:.3rem;}
+
   .photo-picker{display:flex; align-items:center; gap:1rem; margin-top:.6rem;}
   .photo-preview{width:5rem; height:5rem; border-radius:16px; background:var(--paper-raised); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.6rem; color:var(--ink-soft);}
   .photo-preview img{width:100%; height:100%; object-fit:cover;}
@@ -765,9 +775,104 @@
     );
   }
 
+  /* ================= photo crop editor ================= */
+  var CROP_VIEWPORT = 256;
+  var CROP_OUTPUT = 320;
+  function cropScale(c){ return (CROP_VIEWPORT / Math.min(c.iw, c.ih)) * c.zoom; }
+  function clampCropPan(c){
+    var scale = cropScale(c);
+    var dispW = c.iw*scale, dispH = c.ih*scale;
+    var minX = Math.min(0, CROP_VIEWPORT - dispW), maxX = 0;
+    var minY = Math.min(0, CROP_VIEWPORT - dispH), maxY = 0;
+    c.panX = Math.max(minX, Math.min(maxX, c.panX));
+    c.panY = Math.max(minY, Math.min(maxY, c.panY));
+  }
+  function applyCropTransform(){
+    var c = modalState && modalState.crop;
+    var img = document.getElementById("crop-image");
+    if(!c || !img) return;
+    clampCropPan(c);
+    var scale = cropScale(c);
+    img.style.width = (c.iw*scale)+"px";
+    img.style.height = (c.ih*scale)+"px";
+    img.style.transform = "translate("+c.panX+"px,"+c.panY+"px)";
+  }
+  function renderCropEditor(){
+    var c = modalState.crop;
+    if(c.panX === null){
+      var scale = cropScale(c);
+      c.panX = (CROP_VIEWPORT - c.iw*scale) / 2;
+      c.panY = (CROP_VIEWPORT - c.ih*scale) / 2;
+    }
+    var html = '<div class="modal-backdrop" data-action="crop-cancel"><div class="modal-sheet">';
+    html += '<div class="modal-head"><h2 class="modal-title">しゃしんを ちょうせいする</h2><button class="close-btn" data-action="crop-cancel">✕</button></div>';
+    html += '<div class="crop-viewport" id="crop-viewport"><img id="crop-image" src="'+c.raw+'" alt=""></div>';
+    html += '<p class="hint crop-hint">ゆびで うごかす・したのバーで おおきさを かえる</p>';
+    html += '<div class="crop-zoom-row"><span>🔍</span><input type="range" id="crop-zoom" min="100" max="400" value="'+Math.round(c.zoom*100)+'"><span>🔍</span></div>';
+    html += '<div class="btn-row" style="margin-top:1.4rem;">';
+    html += '<button class="btn btn-ghost" data-action="crop-cancel">キャンセル</button>';
+    html += '<button class="btn btn-primary" data-action="crop-confirm">けってい</button>';
+    html += '</div>';
+    html += '</div></div>';
+    modalRoot.innerHTML = html;
+    applyCropTransform();
+
+    var viewport = document.getElementById("crop-viewport");
+    var dragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+    viewport.addEventListener("pointerdown", function(e){
+      dragging = true; startX = e.clientX; startY = e.clientY;
+      startPanX = c.panX; startPanY = c.panY;
+      try{ viewport.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    viewport.addEventListener("pointermove", function(e){
+      if(!dragging) return;
+      c.panX = startPanX + (e.clientX - startX);
+      c.panY = startPanY + (e.clientY - startY);
+      applyCropTransform();
+    });
+    function endDrag(){ dragging = false; }
+    viewport.addEventListener("pointerup", endDrag);
+    viewport.addEventListener("pointercancel", endDrag);
+
+    var zoomSlider = document.getElementById("crop-zoom");
+    zoomSlider.addEventListener("input", function(){
+      c.zoom = Number(zoomSlider.value) / 100;
+      applyCropTransform();
+    });
+  }
+  function startPhotoCrop(file){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        if(!modalState) return;
+        modalState.crop = { raw:reader.result, iw:img.naturalWidth, ih:img.naturalHeight, zoom:1, panX:null, panY:null };
+        renderModal();
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function confirmCrop(){
+    var c = modalState.crop;
+    var img = document.getElementById("crop-image");
+    if(!c || !img) return;
+    var scale = cropScale(c);
+    var srcW = CROP_VIEWPORT / scale, srcH = CROP_VIEWPORT / scale;
+    var srcX = -c.panX / scale, srcY = -c.panY / scale;
+    var canvas = document.createElement("canvas");
+    canvas.width = CROP_OUTPUT; canvas.height = CROP_OUTPUT;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, CROP_OUTPUT, CROP_OUTPUT);
+    modalState.draft.icon = {type:"photo", value:canvas.toDataURL("image/jpeg", 0.85)};
+    modalState.crop = null;
+    renderModal();
+  }
+
   /* ================= modal rendering ================= */
   function renderModal(){
     if(!modalState){ modalRoot.innerHTML = ""; return; }
+    if(modalState.crop){ renderCropEditor(); return; }
     if(modalState.type === "addPicker"){
       var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
       html += '<div class="modal-head"><h2 class="modal-title">よていを ふやす</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
@@ -863,10 +968,7 @@
         photoInput.addEventListener("change", function(ev){
           var file = ev.target.files && ev.target.files[0];
           if(!file) return;
-          resizeImageToDataUrl(file, 240, function(dataUrl){
-            draft.icon = {type:"photo", value:dataUrl};
-            renderModal();
-          });
+          startPhotoCrop(file);
         });
       }
       var symbolInput = document.getElementById("symbol-search");
@@ -957,10 +1059,7 @@
         sPhotoInput.addEventListener("change", function(ev){
           var file = ev.target.files && ev.target.files[0];
           if(!file) return;
-          resizeImageToDataUrl(file, 240, function(dataUrl){
-            sdraft.icon = {type:"photo", value:dataUrl};
-            renderModal();
-          });
+          startPhotoCrop(file);
         });
       }
       var symbolInput = document.getElementById("symbol-search");
@@ -973,24 +1072,6 @@
       }
       return;
     }
-  }
-
-  function resizeImageToDataUrl(file, maxDim, cb){
-    var reader = new FileReader();
-    reader.onload = function(){
-      var img = new Image();
-      img.onload = function(){
-        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
-        var canvas = document.createElement("canvas");
-        canvas.width = w; canvas.height = h;
-        var ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        cb(canvas.toDataURL("image/jpeg", 0.82));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
   }
 
   /* ================= actions ================= */
@@ -1184,6 +1265,11 @@
     if(action === "save-set"){ saveSetFromDraft(); return; }
     if(action === "delete-set"){ deleteCurrentSet(); return; }
     if(action === "close-modal"){ if(e.target===el) closeModal(); return; }
+    if(action === "crop-cancel"){
+      if(modalState && (e.target===el)) { modalState.crop = null; renderModal(); }
+      return;
+    }
+    if(action === "crop-confirm"){ confirmCrop(); return; }
     if(action === "icon-tab"){
       if(modalState) modalState.draft.icon = modalState.draft.icon.type === el.getAttribute("data-tab")
         ? modalState.draft.icon
