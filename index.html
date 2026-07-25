@@ -138,6 +138,11 @@
     flex:none; width:3rem; display:flex; align-items:center; justify-content:center; border:none; background:none;
     color:var(--ink-soft); font-size:1.5rem; touch-action:none; cursor:grab;
   }
+  .delete-handle{
+    flex:none; width:3rem; display:flex; align-items:center; justify-content:center; border:none; background:none;
+    color:var(--ink-soft); font-size:1.4rem; opacity:.6;
+  }
+  .delete-handle:active{opacity:1;}
   .card.dragging{opacity:.9; box-shadow:var(--shadow); z-index:3;}
 
   .band-add{
@@ -651,6 +656,7 @@
               '<span class="speaker-hint">🔊</span>' +
             '</button>' +
             '<button class="drag-handle" data-role="drag-handle" data-item-id="'+item.id+'" aria-label="ならびかえ">⠿</button>' +
+            '<button class="delete-handle" data-action="delete-item" data-item-id="'+item.id+'" aria-label="けす">🗑️</button>' +
           '</div>' +
         '</li>'
       );
@@ -1136,6 +1142,13 @@
     render();
   }
 
+  function deleteDayItem(itemId){
+    var key = formatKey(ui.date);
+    state.schedule[key] = getDayItems(key).filter(function(it){ return it.id !== itemId; });
+    saveState();
+    render();
+  }
+
   function reorderItem(itemId, newIndex){
     var key = formatKey(ui.date);
     var list = getDayItems(key);
@@ -1231,6 +1244,10 @@
     if(action === "edit-preset"){ openPresetEditor(el.getAttribute("data-preset-id"), false); return; }
     if(action === "add-item"){
       addItemToDay(el.getAttribute("data-preset-id"));
+      return;
+    }
+    if(action === "delete-item"){
+      deleteDayItem(el.getAttribute("data-item-id"));
       return;
     }
     if(action === "new-set"){ openSetEditor(null, true); return; }
