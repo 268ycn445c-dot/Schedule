@@ -133,13 +133,11 @@
   .icon-emoji{font-size:2.4rem; line-height:1;}
   .icon-photo{width:100%; height:100%; object-fit:cover;}
   .card-label{font-family:var(--font-display); font-size:1.55rem; font-weight:700; line-height:1.25;}
-  .reorder-controls{flex:none; width:3rem; display:flex; flex-direction:column; gap:.15rem; padding:.4rem 0;}
-  .reorder-btn{
-    flex:1; border:none; background:var(--paper); border-radius:10px; color:var(--ink-soft);
-    font-size:1.1rem; display:flex; align-items:center; justify-content:center;
+  .drag-handle{
+    flex:none; width:3rem; display:flex; align-items:center; justify-content:center; border:none; background:none;
+    color:var(--ink-soft); font-size:1.5rem; touch-action:none; cursor:grab;
   }
-  .reorder-btn:active{background:var(--line);}
-  .reorder-btn:disabled{opacity:.25;}
+  .card.dragging{opacity:.9; box-shadow:var(--shadow); z-index:3;}
   .card-delete{
     position:absolute; top:.35rem; right:.35rem; width:1.5rem; height:1.5rem; padding:0; border-radius:50%;
     border:1px solid var(--line); background:var(--paper-raised); color:var(--ink-soft);
@@ -656,10 +654,7 @@
               '<span class="icon-slot">'+ renderIcon(preset.icon) +'</span>' +
               '<span class="card-label">'+ escapeHtml(preset.label) +'</span>' +
             '</button>' +
-            '<div class="reorder-controls">' +
-              '<button class="reorder-btn" data-action="move-up" data-item-id="'+item.id+'" aria-label="うえに うごかす"'+(index===0?' disabled':'')+'>▲</button>' +
-              '<button class="reorder-btn" data-action="move-down" data-item-id="'+item.id+'" aria-label="したに うごかす"'+(index===items.length-1?' disabled':'')+'>▼</button>' +
-            '</div>' +
+            '<button class="drag-handle" data-role="drag-handle" data-item-id="'+item.id+'" aria-label="ならびかえ">⠿</button>' +
             '<button class="card-delete" data-action="delete-item" data-item-id="'+item.id+'" aria-label="けす">×</button>' +
           '</div>' +
         '</li>'
@@ -1153,18 +1148,16 @@
     render();
   }
 
-  function moveDayItem(itemId, delta){
+  function reorderItem(itemId, newIndex){
     var key = formatKey(ui.date);
     var list = getDayItems(key);
     var idx = -1;
     for(var i=0;i<list.length;i++){ if(list[i].id===itemId){ idx=i; break; } }
     if(idx===-1) return;
-    var newIndex = idx + delta;
-    if(newIndex < 0 || newIndex >= list.length) return;
     var it = list.splice(idx,1)[0];
+    newIndex = Math.max(0, Math.min(list.length, newIndex));
     list.splice(newIndex,0,it);
     saveState();
-    render();
   }
 
   function savePresetFromDraft(){
@@ -1256,8 +1249,6 @@
       deleteDayItem(el.getAttribute("data-item-id"));
       return;
     }
-    if(action === "move-up"){ moveDayItem(el.getAttribute("data-item-id"), -1); return; }
-    if(action === "move-down"){ moveDayItem(el.getAttribute("data-item-id"), 1); return; }
     if(action === "new-set"){ openSetEditor(null, true); return; }
     if(action === "edit-set"){ openSetEditor(el.getAttribute("data-set-id"), false); return; }
     if(action === "add-set"){ addSetToDay(el.getAttribute("data-set-id")); return; }
@@ -1340,6 +1331,7 @@
   function bindGestures(){
     bindSwipeZone();
     bindCardSwipes();
+    bindDragHandles();
   }
 
   function bindSwipeZone(){
@@ -1408,6 +1400,63 @@
       }
       body.addEventListener("pointerup", endDrag);
       body.addEventListener("pointercancel", function(){ dragging=false; inner.style.transform="translateX(0)"; });
+    });
+  }
+
+  function bindDragHandles(){
+    var ENGAGE_THRESHOLD = 14; // ignore small jitter so a light touch never moves a card
+    document.querySelectorAll('[data-role="drag-handle"]').forEach(function(handle){
+      var card = handle.closest(".card");
+      var list = handle.closest(".day-list");
+      if(!card || !list) return;
+      var startY=0, tracking=false, engaged=false;
+      handle.addEventListener("pointerdown", function(e){
+        startY = e.clientY; tracking = true; engaged = false;
+        try{ handle.setPointerCapture(e.pointerId); }catch(err){}
+      });
+      handle.addEventListener("pointermove", function(e){
+        if(!tracking) return;
+        var dy = e.clientY - startY;
+        if(!engaged){
+          if(Math.abs(dy) < ENGAGE_THRESHOLD) return;
+          engaged = true;
+          card.classList.add("dragging");
+          card.style.position = "relative";
+          card.style.zIndex = "5";
+        }
+        card.style.transform = "translateY("+dy+"px)";
+        var siblings = Array.prototype.slice.call(list.children).filter(function(c){ return c!==card; });
+        for(var i=0;i<siblings.length;i++){
+          var rect = siblings[i].getBoundingClientRect();
+          var mid = rect.top + rect.height/2;
+          if(e.clientY < mid){
+            if(siblings[i].previousSibling !== card) list.insertBefore(card, siblings[i]);
+            card.style.transform = "translateY(0)";
+            startY = e.clientY;
+            break;
+          }else if(i === siblings.length-1){
+            if(list.lastChild !== card) list.appendChild(card);
+            card.style.transform = "translateY(0)";
+            startY = e.clientY;
+          }
+        }
+      });
+      function endDragHandle(){
+        if(!tracking) return;
+        tracking = false;
+        if(engaged){
+          card.classList.remove("dragging");
+          card.style.transform = "";
+          card.style.zIndex = "";
+          var order = Array.prototype.slice.call(list.children).map(function(c){ return c.getAttribute("data-item-id"); });
+          var itemId = card.getAttribute("data-item-id");
+          reorderItem(itemId, order.indexOf(itemId));
+          render();
+        }
+        engaged = false;
+      }
+      handle.addEventListener("pointerup", endDragHandle);
+      handle.addEventListener("pointercancel", endDragHandle);
     });
   }
 
