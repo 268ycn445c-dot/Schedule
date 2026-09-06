@@ -127,6 +127,13 @@
   }
   .date-heading .sub-date{margin-top:.3rem; font-size:.95rem; color:var(--ink-soft);}
   .month-heading{font-size:1.9rem; text-align:center; flex:1;}
+  .today-chip-row{text-align:center; margin-top:.55rem;}
+  .today-chip{
+    padding:.4rem 1.1rem; border-radius:var(--radius-pill); border:1px solid var(--line);
+    background:var(--paper-raised); box-shadow:var(--shadow);
+    font-family:var(--font-display); font-weight:700; font-size:.95rem; color:var(--sora);
+  }
+  .today-chip:active{transform:scale(.96);}
 
   /* ---------- content ---------- */
   .content{flex:1; padding:1rem 1rem 8rem; touch-action:pan-y;}
@@ -668,6 +675,24 @@
     appEl.innerHTML = html;
     renderModal();
     bindGestures();
+    maybeSwipeHint();
+  }
+
+  var swipeHintShown = false;
+  function maybeSwipeHint(){
+    if(swipeHintShown || ui.view !== "day" || !state.locked) return;
+    try{ if(localStorage.getItem("yotei-swipe-hint")){ swipeHintShown = true; return; } }catch(e){}
+    var inner = appEl.querySelector('.card:not(.is-done) .card-inner');
+    if(!inner) return;
+    swipeHintShown = true;
+    try{ localStorage.setItem("yotei-swipe-hint","1"); }catch(e){}
+    setTimeout(function(){
+      if(!inner.isConnected) return;
+      inner.style.transition = "transform .45s ease";
+      inner.style.transform = "translateX(-72px)";
+      setTimeout(function(){ inner.style.transform = "translateX(0)"; }, 650);
+      setTimeout(function(){ inner.style.transition = ""; }, 1200);
+    }, 700);
   }
 
   function renderTopbar(){
@@ -676,6 +701,8 @@
       var relLabel = relativeDayLabel(d);
       var bigText = relLabel ? relLabel : ((d.getMonth()+1) +'がつ'+ d.getDate() +'にち');
       var subDate = relLabel ? '<div class="sub-date num">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>' : '';
+      var backToday = sameDay(d, new Date()) ? '' :
+        '<div class="today-chip-row"><button class="today-chip" data-action="go-today">きょうに もどる</button></div>';
       return (
         '<div class="topbar">' +
           '<div class="topbar-row">' +
@@ -694,6 +721,7 @@
             '</div>' +
             '<button class="arrow-btn" data-action="day-next" aria-label="つぎのひ">▶</button>' +
           '</div>' +
+          backToday +
         '</div>'
       );
     }
@@ -819,14 +847,14 @@
     var html = "";
     if(unlocked){
       html += '<div class="reorder-hint">🔓 ならびかえ できます — ⠿ を うごかして じゅんばんを かえてね</div>';
-    }else{
+    }else if(isToday){
       var pct = Math.round(doneCount / items.length * 100);
       var lead;
       if(allDone){ lead = 'ぜんぶ できたね！🎉'; }
       else if(highlightIdx > -1){
         var np = getPreset(items[highlightIdx].presetId);
         lead = 'つぎは 「' + escapeHtml(np ? np.label : '') + '」';
-      }else{ lead = 'この ひの よてい'; }
+      }else{ lead = 'きょうの よてい'; }
       html += (
         '<div class="day-progress">' +
           '<div class="day-progress-bar"><span style="width:'+pct+'%"></span></div>' +
@@ -834,6 +862,8 @@
           '<div class="day-progress-count num">'+doneCount+' / '+items.length+' できた</div>' +
         '</div>'
       );
+    }else{
+      html += '<div class="day-progress"><div class="day-progress-lead">'+items.length+'こ の よてい</div></div>';
     }
     html += '<ul class="day-list'+(unlocked?' is-unlocked':'')+'">';
     items.forEach(function(item, index){
@@ -1448,6 +1478,7 @@
     if(action === "month-next"){ ui.monthCursor = addMonths(ui.monthCursor,1); render(); return; }
     if(action === "threeday-prev"){ ui.date = addDays(ui.date,-1); render(); return; }
     if(action === "threeday-next"){ ui.date = addDays(ui.date,1); render(); return; }
+    if(action === "go-today"){ ui.date = new Date(); render(); return; }
     if(action === "switch-view"){
       var v = el.getAttribute("data-view");
       if(v === "day" || v === "3day"){ ui.date = new Date(); }
