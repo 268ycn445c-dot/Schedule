@@ -540,8 +540,117 @@
     return { presets: defaultPresets(), sets: [], schedule: {}, locked: true };
   }
   var state = loadState();
+  var saveWarned = false;
   function saveState(){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      saveWarned = false;
+    }catch(e){
+      // quota exceeded or storage disabled — don't fail silently
+      if(!saveWarned && typeof showToast === "function"){
+        saveWarned = true;
+        showToast("ほぞんが いっぱいです。しゃしんを へらしてください", null, null);
+      }
+    }
+  }
+
+  /* ================= photos (IndexedDB, keeps localStorage small) ================= */
+  var TRANSPARENT_PX = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+  var photoCache = {};   // photoId -> data URL, held in memory for synchronous render
+  var photoDB = null;
+
+  function isDataUrl(v){ return typeof v === "string" && v.slice(0,5) === "data:"; }
+
+  function openPhotoDB(){
+    return new Promise(function(resolve){
+      try{
+        var req = indexedDB.open("yotei-photos", 1);
+        req.onupgradeneeded = function(){ req.result.createObjectStore("photos"); };
+        req.onsuccess = function(){ resolve(req.result); };
+        req.onerror = function(){ resolve(null); };
+      }catch(e){ resolve(null); }
+    });
+  }
+  function idbPut(id, dataUrl){
+    return new Promise(function(resolve){
+      if(!photoDB) return resolve(false);
+      try{
+        var tx = photoDB.transaction("photos", "readwrite");
+        tx.objectStore("photos").put(dataUrl, id);
+        tx.oncomplete = function(){ resolve(true); };
+        tx.onerror = function(){ resolve(false); };
+      }catch(e){ resolve(false); }
+    });
+  }
+  function idbDelete(id){
+    return new Promise(function(resolve){
+      if(!photoDB) return resolve();
+      try{
+        var tx = photoDB.transaction("photos", "readwrite");
+        tx.objectStore("photos").delete(id);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ resolve(); };
+      }catch(e){ resolve(); }
+    });
+  }
+  function idbLoadAll(){
+    return new Promise(function(resolve){
+      if(!photoDB) return resolve({});
+      var out = {};
+      try{
+        var cur = photoDB.transaction("photos", "readonly").objectStore("photos").openCursor();
+        cur.onsuccess = function(){
+          var c = cur.result;
+          if(c){ out[c.key] = c.value; c.continue(); }
+          else resolve(out);
+        };
+        cur.onerror = function(){ resolve(out); };
+      }catch(e){ resolve({}); }
+    });
+  }
+
+  function allIcons(){
+    var icons = [];
+    state.presets.forEach(function(p){ if(p && p.icon) icons.push(p.icon); });
+    state.sets.forEach(function(s){ if(s && s.icon) icons.push(s.icon); });
+    return icons;
+  }
+
+  function initPhotos(){
+    return openPhotoDB().then(function(db){
+      photoDB = db;
+      return idbLoadAll();
+    }).then(function(loaded){
+      photoCache = loaded || {};
+      var migrations = [], migrated = false;
+      // move any legacy inline photos into IndexedDB
+      allIcons().forEach(function(icon){
+        if(icon.type === "photo" && isDataUrl(icon.value)){
+          var id = uid();
+          photoCache[id] = icon.value;
+          migrations.push(idbPut(id, icon.value));
+          icon.value = id;
+          migrated = true;
+        }
+      });
+      if(migrated) saveState();
+      freeUnusedPhotos();
+      return Promise.all(migrations);
+    }).catch(function(){});
+  }
+
+  // drop cached / stored photos no longer referenced by any preset or set
+  function freeUnusedPhotos(){
+    var used = {};
+    allIcons().forEach(function(icon){ if(icon.type === "photo") used[icon.value] = 1; });
+    Object.keys(photoCache).forEach(function(id){
+      if(!used[id]){ delete photoCache[id]; idbDelete(id); }
+    });
+  }
+
+  function photoSrc(value){
+    if(isDataUrl(value)) return value;           // inline fallback (no IndexedDB)
+    return photoCache[value] || TRANSPARENT_PX;   // resolved by id
   }
 
   function getPreset(id){
@@ -803,7 +912,7 @@
   function renderIcon(icon, extraClass){
     if(!icon) icon = {type:"emoji", value:"❓"};
     if(icon.type === "photo"){
-      return '<img class="icon-photo '+(extraClass||"")+'" src="'+icon.value+'" alt="">';
+      return '<img class="icon-photo '+(extraClass||"")+'" src="'+photoSrc(icon.value)+'" alt="">';
     }
     if(icon.type === "symbol"){
       return '<img class="icon-photo '+(extraClass||"")+'" src="symbols/'+encodeURIComponent(icon.value)+'" alt="">';
@@ -1135,7 +1244,15 @@
     canvas.width = CROP_OUTPUT; canvas.height = CROP_OUTPUT;
     var ctx = canvas.getContext("2d");
     ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, CROP_OUTPUT, CROP_OUTPUT);
-    modalState.draft.icon = {type:"photo", value:canvas.toDataURL("image/jpeg", 0.85)};
+    var dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    if(photoDB){
+      var pid = uid();
+      photoCache[pid] = dataUrl;
+      idbPut(pid, dataUrl);
+      modalState.draft.icon = {type:"photo", value:pid};
+    }else{
+      modalState.draft.icon = {type:"photo", value:dataUrl};  // fallback: store inline
+    }
     modalState.crop = null;
     renderModal();
   }
@@ -1209,7 +1326,7 @@
         html += '<div class="symbol-grid" id="symbol-results">'+ symbolResultsHtml(draft) +'</div>';
       }else{
         html += '<div class="photo-picker">';
-        html += '<span class="photo-preview">'+(draft.icon.type==="photo" && draft.icon.value ? '<img src="'+draft.icon.value+'" alt="">' : "🖼️")+'</span>';
+        html += '<span class="photo-preview">'+(draft.icon.type==="photo" && draft.icon.value ? '<img src="'+photoSrc(draft.icon.value)+'" alt="">' : "🖼️")+'</span>';
         html += '<label class="file-btn">しゃしんを えらぶ<input type="file" accept="image/*" id="photo-input" style="display:none;"></label>';
         html += '</div>';
       }
@@ -1284,7 +1401,7 @@
         html += '<div class="symbol-grid" id="symbol-results">'+ symbolResultsHtml(sdraft) +'</div>';
       }else{
         html += '<div class="photo-picker">';
-        html += '<span class="photo-preview">'+(sdraft.icon.type==="photo" && sdraft.icon.value ? '<img src="'+sdraft.icon.value+'" alt="">' : "🖼️")+'</span>';
+        html += '<span class="photo-preview">'+(sdraft.icon.type==="photo" && sdraft.icon.value ? '<img src="'+photoSrc(sdraft.icon.value)+'" alt="">' : "🖼️")+'</span>';
         html += '<label class="file-btn">しゃしんを えらぶ<input type="file" accept="image/*" id="set-photo-input" style="display:none;"></label>';
         html += '</div>';
       }
@@ -1466,6 +1583,7 @@
       state.presets.push({id:uid(), label:label, icon:draft.icon});
     }
     saveState();
+    freeUnusedPhotos();
     modalState = null;
     render();
   }
@@ -1480,6 +1598,7 @@
       s.presetIds = s.presetIds.filter(function(pid){ return pid!==id; });
     });
     saveState();
+    freeUnusedPhotos();
     modalState = null;
     render();
   }
@@ -1497,6 +1616,7 @@
       state.sets.push({id:uid(), label:label, icon:draft.icon, presetIds:draft.presetIds.slice()});
     }
     saveState();
+    freeUnusedPhotos();
     modalState = null;
     render();
   }
@@ -1505,6 +1625,7 @@
     var id = modalState.setId;
     state.sets = state.sets.filter(function(s){ return s.id!==id; });
     saveState();
+    freeUnusedPhotos();
     modalState = null;
     render();
   }
@@ -1768,6 +1889,7 @@
   }
 
   render();
+  initPhotos().then(function(){ render(); });
 })();
 </script>
 </body>
