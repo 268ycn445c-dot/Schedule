@@ -95,7 +95,7 @@
   .reorder-hint{
     display:flex; align-items:center; gap:.45rem; margin:0 0 .8rem;
     padding:.65rem .9rem; border-radius:16px; font-size:1rem; font-weight:700;
-    font-family:var(--font-display);
+    font-family:var(--font-display); word-break:keep-all;
     background:color-mix(in srgb, var(--accent) 18%, var(--paper-raised));
     color:var(--accent-ink);
   }
@@ -319,12 +319,51 @@
   .btn-danger{background:none; border:1px solid var(--line); color:#B5473C;}
   .btn:active{transform:scale(.98);}
 
+  /* ---------- toast (delete undo) ---------- */
+  #fx-root{position:fixed; inset:0; pointer-events:none; z-index:40;}
+  .toast{
+    position:fixed; left:50%; bottom:6.4rem; transform:translate(-50%,1.5rem);
+    display:flex; align-items:center; gap:.9rem; width:max-content; max-width:calc(100% - 2rem);
+    padding:.8rem 1rem .8rem 1.2rem; border-radius:16px;
+    background:var(--ink); color:var(--paper); box-shadow:var(--shadow);
+    font-size:1.05rem; font-weight:700; opacity:0;
+    transition:opacity .2s ease, transform .2s ease; pointer-events:auto;
+  }
+  .toast.show{opacity:1; transform:translate(-50%,0);}
+  .toast-msg{line-height:1.3; word-break:keep-all;}
+  .toast-action{
+    flex:none; border:none; background:none; color:var(--accent);
+    font-weight:800; font-size:1.05rem; font-family:var(--font-display); padding:.2rem .3rem;
+  }
+
+  /* ---------- celebration (all done) ---------- */
+  .celebrate{
+    position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+    background:rgba(20,24,26,.32); opacity:0; transition:opacity .3s ease; pointer-events:auto;
+  }
+  .celebrate.show{opacity:1;}
+  .celebrate-card{
+    background:var(--paper-raised); border-radius:26px; padding:1.6rem 1.8rem; text-align:center;
+    box-shadow:var(--shadow); transform:scale(.8); transition:transform .3s ease;
+    max-width:min(20rem, calc(100% - 3rem));
+  }
+  .celebrate.show .celebrate-card{transform:scale(1);}
+  .celebrate-face{font-size:3.4rem; line-height:1;}
+  .celebrate-msg{font-family:var(--font-display); font-size:1.5rem; font-weight:700; margin:.5rem 0 0; color:var(--ink); text-wrap:balance; word-break:keep-all;}
+  .confetti{position:absolute; inset:0; overflow:hidden;}
+  .confetti i{
+    position:absolute; top:-8%; width:.7rem; height:1rem; border-radius:2px;
+    animation:confetti-fall linear forwards;
+  }
+  @keyframes confetti-fall{ to{ transform:translateY(115vh) rotate(540deg); } }
+
 </style>
 </head>
 <body>
 
 <div id="app"></div>
 <div id="modal-root"></div>
+<div id="fx-root"></div>
 
 <script>
 (function(){
@@ -518,6 +557,75 @@
     }catch(e){}
   }
 
+  /* ================= feedback: haptics, toast, celebration ================= */
+  function haptic(pattern){
+    try{ if(navigator.vibrate) navigator.vibrate(pattern); }catch(e){}
+  }
+
+  var toastTimer = null;
+  function showToast(message, actionLabel, actionFn){
+    var root = document.getElementById("fx-root");
+    if(!root) return;
+    clearTimeout(toastTimer);
+    var wrap = document.createElement("div");
+    wrap.className = "toast";
+    var msgEl = document.createElement("span");
+    msgEl.className = "toast-msg";
+    msgEl.textContent = message;
+    wrap.appendChild(msgEl);
+    if(actionLabel && actionFn){
+      var btn = document.createElement("button");
+      btn.className = "toast-action";
+      btn.textContent = actionLabel;
+      btn.addEventListener("click", function(){
+        clearTimeout(toastTimer);
+        root.innerHTML = "";
+        actionFn();
+      });
+      wrap.appendChild(btn);
+    }
+    root.innerHTML = "";
+    root.appendChild(wrap);
+    requestAnimationFrame(function(){ wrap.classList.add("show"); });
+    toastTimer = setTimeout(function(){
+      wrap.classList.remove("show");
+      setTimeout(function(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 250);
+    }, 5000);
+  }
+
+  var PRAISE = ["ぜんぶ できたね！", "すごい！ ぜんぶ おわったよ", "よく がんばったね！", "パーフェクト！"];
+  function celebrate(){
+    var root = document.getElementById("fx-root");
+    if(!root) return;
+    haptic([0,70,40,70,40,120]);
+    var msg = PRAISE[Math.floor(Math.random()*PRAISE.length)];
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var overlay = document.createElement("div");
+    overlay.className = "celebrate";
+    var confetti = "";
+    if(!reduce){
+      var colors = ["#F2A63B","#2E7C93","#4F8F5B","#C0392B","#8D87C4","#F2C94C"];
+      for(var i=0;i<36;i++){
+        confetti += '<i style="left:'+(Math.random()*100)+'%;background:'+colors[i%colors.length] +
+          ';animation-delay:'+(Math.random()*0.4).toFixed(2)+'s;animation-duration:'+(1.6+Math.random()*1.2).toFixed(2)+'s"></i>';
+      }
+    }
+    overlay.innerHTML = '<div class="confetti">'+confetti+'</div>' +
+      '<div class="celebrate-card"><div class="celebrate-face">🎉</div><p class="celebrate-msg"></p></div>';
+    overlay.querySelector(".celebrate-msg").textContent = msg;
+    root.appendChild(overlay);
+    requestAnimationFrame(function(){ overlay.classList.add("show"); });
+    speak(msg);
+    var done = false;
+    function dismiss(){
+      if(done) return; done = true;
+      overlay.classList.remove("show");
+      setTimeout(function(){ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 300);
+    }
+    overlay.addEventListener("click", dismiss);
+    setTimeout(dismiss, 2800);
+  }
+
   /* ================= ui state (not persisted) ================= */
   var ui = { view:"day", date:new Date(), monthCursor:new Date() };
   var modalState = null; // {type:'addPicker'} | {type:'editPreset', presetId|null}
@@ -564,9 +672,16 @@
       );
     }
     if(ui.view === "3day"){
+      var s3 = ui.date, e3 = addDays(s3, 2);
+      var range3 = (s3.getMonth()+1)+'/'+s3.getDate()+' 〜 '+(e3.getMonth()+1)+'/'+e3.getDate();
       return (
         '<div class="topbar">' +
           '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・みっかかん</span></div>' +
+          '<div class="date-nav">' +
+            '<button class="arrow-btn" data-action="threeday-prev" aria-label="まえ">◀</button>' +
+            '<div class="month-heading num" data-swipe-zone="3day" style="font-size:1.4rem;">'+ range3 +'</div>' +
+            '<button class="arrow-btn" data-action="threeday-next" aria-label="つぎ">▶</button>' +
+          '</div>' +
         '</div>'
       );
     }
@@ -695,10 +810,10 @@
   }
 
   function renderThreeDayView(){
-    var today = new Date();
+    var start = new Date(ui.date);
     var html = '<div class="threeday-grid">';
     for(var i=0;i<3;i++){
-      var d = addDays(today, i);
+      var d = addDays(start, i);
       var key = formatKey(d);
       var items = getDayItems(key);
       var label = relativeDayLabel(d) || ((d.getMonth()+1)+'/'+d.getDate());
@@ -1165,16 +1280,33 @@
     var found = null;
     items.forEach(function(it){ if(it.id===itemId) found = it; });
     if(!found) return;
+    var wasAllDone = items.length > 0 && items.every(function(it){ return it.done; });
     found.done = !found.done;
     saveState();
+    haptic(found.done ? 18 : 10);
     render();
+    if(found.done && !wasAllDone && items.every(function(it){ return it.done; })){
+      celebrate();
+    }
   }
 
   function deleteDayItem(itemId){
     var key = formatKey(ui.date);
-    state.schedule[key] = getDayItems(key).filter(function(it){ return it.id !== itemId; });
+    var list = getDayItems(key);
+    var idx = -1, removed = null;
+    for(var i=0;i<list.length;i++){ if(list[i].id===itemId){ idx=i; removed=list[i]; break; } }
+    if(!removed) return;
+    list.splice(idx,1);
     saveState();
+    haptic(20);
     render();
+    var preset = getPreset(removed.presetId);
+    showToast("「" + (preset ? preset.label : "よてい") + "」を けしました", "もとにもどす", function(){
+      var cur = getDayItems(key);
+      cur.splice(Math.min(idx, cur.length), 0, removed);
+      saveState();
+      render();
+    });
   }
 
   function reorderItem(itemId, newIndex){
@@ -1186,6 +1318,7 @@
     var it = list.splice(idx,1)[0];
     newIndex = Math.max(0, Math.min(list.length, newIndex));
     list.splice(newIndex,0,it);
+    if(newIndex !== idx) haptic(12);
     saveState();
   }
 
@@ -1255,9 +1388,11 @@
     if(action === "speak-item"){ speak(el.getAttribute("data-speak")); return; }
     if(action === "month-prev"){ ui.monthCursor = addMonths(ui.monthCursor,-1); render(); return; }
     if(action === "month-next"){ ui.monthCursor = addMonths(ui.monthCursor,1); render(); return; }
+    if(action === "threeday-prev"){ ui.date = addDays(ui.date,-1); render(); return; }
+    if(action === "threeday-next"){ ui.date = addDays(ui.date,1); render(); return; }
     if(action === "switch-view"){
       var v = el.getAttribute("data-view");
-      if(v === "day"){ ui.date = new Date(); }
+      if(v === "day" || v === "3day"){ ui.date = new Date(); }
       ui.view = v;
       render();
       return;
@@ -1385,6 +1520,7 @@
       if(Math.abs(dx) < 60) return;
       var dir = dx < 0 ? 1 : -1;
       if(ui.view === "day"){ ui.date = addDays(ui.date, dir); render(); }
+      else if(ui.view === "3day"){ ui.date = addDays(ui.date, dir); render(); }
       else if(ui.view === "month"){ ui.monthCursor = addMonths(ui.monthCursor, dir); render(); }
     }
     content.addEventListener("pointerup", finish);
