@@ -126,7 +126,7 @@
     background:var(--sora); color:var(--sora-ink); font-weight:700; font-size:1rem;
   }
   .date-heading .sub-date{margin-top:.3rem; font-size:.95rem; color:var(--ink-soft);}
-  .month-heading{font-size:1.9rem; text-align:center; flex:1;}
+  .month-heading{font-size:1.6rem; text-align:center; flex:1; word-break:keep-all;}
   .today-chip-row{text-align:center; margin-top:.55rem;}
   .today-chip{
     padding:.4rem 1.1rem; border-radius:var(--radius-pill); border:1px solid var(--line);
@@ -244,6 +244,7 @@
     align-self:flex-start; margin-top:auto; min-width:1.5rem; text-align:center; padding:.1rem .35rem;
     border-radius:var(--radius-pill); background:var(--accent); color:var(--accent-ink); font-size:.85rem; font-weight:700;
   }
+  .month-count.is-done{background:var(--done); color:#fff;}
 
   /* ---------- presets screen ---------- */
   .preset-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(7.6rem,1fr)); gap:.8rem;}
@@ -941,13 +942,15 @@
     for(var i=0;i<42;i++){
       var d = addDays(gridStart, i);
       var key = formatKey(d);
-      var count = getDayItems(key).length;
+      var dayItems = getDayItems(key);
+      var count = dayItems.length;
+      var allDayDone = count > 0 && dayItems.every(function(it){ return it.done; });
       var isOther = d.getMonth() !== m.getMonth();
       var dowCls = (d.getDay()===0 || isHoliday(d)) ? ' is-sun' : (d.getDay()===6 ? ' is-sat' : '');
       html += '<button class="month-cell'+(isOther?' is-other':'')+(sameDay(d,today)?' is-today':'')+'" data-action="goto-day" data-date="'+key+'">';
       html += '<span class="dnum num'+dowCls+'">'+d.getDate()+'</span>';
       if(count){
-        html += '<span class="month-count num">'+count+'</span>';
+        html += '<span class="month-count num'+(allDayDone?' is-done':'')+'">'+(allDayDone?'✓':count)+'</span>';
       }
       html += '</button>';
     }
