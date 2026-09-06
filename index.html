@@ -82,7 +82,24 @@
     padding:.9rem 1rem .7rem;
   }
   .topbar-row{display:flex; align-items:center; justify-content:space-between; gap:.5rem;}
-  .app-title{font-size:1.05rem; color:var(--ink-soft); letter-spacing:.04em; font-family:var(--font-ui); font-weight:700;}
+  .app-title{font-size:1.05rem; color:var(--ink-soft); letter-spacing:.04em; font-family:var(--font-ui); font-weight:700; white-space:nowrap; min-width:0; overflow:hidden; text-overflow:ellipsis;}
+  .lock-btn{
+    flex:none; display:flex; align-items:center; gap:.35rem;
+    padding:.4rem .8rem; border-radius:var(--radius-pill);
+    border:1px solid var(--line); background:var(--paper-raised); color:var(--ink-soft);
+    font-size:1rem; font-weight:700; font-family:var(--font-display); box-shadow:var(--shadow);
+  }
+  .lock-btn .lock-ico{font-size:1.2rem; line-height:1;}
+  .lock-btn:active{transform:scale(.96);}
+  .lock-btn.is-unlocked{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .reorder-hint{
+    display:flex; align-items:center; gap:.45rem; margin:0 0 .8rem;
+    padding:.65rem .9rem; border-radius:16px; font-size:1rem; font-weight:700;
+    font-family:var(--font-display);
+    background:color-mix(in srgb, var(--accent) 18%, var(--paper-raised));
+    color:var(--accent-ink);
+  }
+  .day-list.is-unlocked .card-inner{border-style:dashed; border-color:var(--accent);}
   .date-nav{display:flex; align-items:center; justify-content:center; gap:.6rem; margin-top:.5rem;}
   .arrow-btn{
     width:3.4rem; height:3.4rem; border-radius:var(--radius-pill); border:1px solid var(--line);
@@ -134,8 +151,8 @@
   .icon-photo{width:100%; height:100%; object-fit:cover;}
   .card-label{font-family:var(--font-display); font-size:1.55rem; font-weight:700; line-height:1.25;}
   .drag-handle{
-    flex:none; width:3rem; display:flex; align-items:center; justify-content:center; border:none; background:none;
-    color:var(--ink-soft); font-size:1.5rem; touch-action:none; cursor:grab;
+    flex:none; width:2.4rem; display:flex; align-items:center; justify-content:center; border:none; background:none;
+    color:var(--ink-soft); font-size:1.4rem; touch-action:none; cursor:grab;
   }
   .card.dragging{opacity:.9; box-shadow:var(--shadow); z-index:3;}
   .card-delete{
@@ -442,11 +459,12 @@
         var parsed = JSON.parse(raw);
         if(parsed && parsed.presets){
           if(!parsed.sets) parsed.sets = [];
+          if(parsed.locked === undefined) parsed.locked = true;
           return parsed;
         }
       }
     }catch(e){}
-    return { presets: defaultPresets(), sets: [], schedule: {} };
+    return { presets: defaultPresets(), sets: [], schedule: {}, locked: true };
   }
   var state = loadState();
   function saveState(){
@@ -526,7 +544,13 @@
       var subDate = relLabel ? '<div class="sub-date num">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>' : '';
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう</span></div>' +
+          '<div class="topbar-row">' +
+            '<span class="app-title">スケジュールきょうゆう</span>' +
+            '<button class="lock-btn'+(state.locked?"":" is-unlocked")+'" data-action="toggle-lock" aria-label="'+(state.locked?"ならびかえの ロックを かいじょする":"ならびかえを ロックする")+'">' +
+              '<span class="lock-ico">'+(state.locked?"🔒":"🔓")+'</span>' +
+              '<span>'+(state.locked?"ロック":"かいじょちゅう")+'</span>' +
+            '</button>' +
+          '</div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="day-prev" aria-label="まえのひ">◀</button>' +
             '<div class="date-heading" data-swipe-zone="day">' +
@@ -641,7 +665,12 @@
         '</div>'
       );
     }
-    var html = '<ul class="day-list">';
+    var unlocked = !state.locked;
+    var html = "";
+    if(unlocked){
+      html += '<div class="reorder-hint">🔓 ならびかえ できます — ⠿ を うごかして じゅんばんを かえてね</div>';
+    }
+    html += '<ul class="day-list'+(unlocked?' is-unlocked':'')+'">';
     items.forEach(function(item, index){
       var preset = getPreset(item.presetId);
       if(!preset) return;
@@ -654,8 +683,8 @@
               '<span class="icon-slot">'+ renderIcon(preset.icon) +'</span>' +
               '<span class="card-label">'+ escapeHtml(preset.label) +'</span>' +
             '</button>' +
-            '<button class="drag-handle" data-role="drag-handle" data-item-id="'+item.id+'" aria-label="ならびかえ">⠿</button>' +
-            '<button class="card-delete" data-action="delete-item" data-item-id="'+item.id+'" aria-label="けす">×</button>' +
+            (unlocked ? '<button class="drag-handle" data-role="drag-handle" data-item-id="'+item.id+'" aria-label="ならびかえ">⠿</button>' : '') +
+            (unlocked ? '<button class="card-delete" data-action="delete-item" data-item-id="'+item.id+'" aria-label="けす">×</button>' : '') +
           '</div>' +
         '</li>'
       );
@@ -1222,6 +1251,7 @@
     var action = el.getAttribute("data-action");
     if(action === "day-prev"){ ui.date = addDays(ui.date,-1); render(); return; }
     if(action === "day-next"){ ui.date = addDays(ui.date,1); render(); return; }
+    if(action === "toggle-lock"){ state.locked = !state.locked; saveState(); render(); return; }
     if(action === "speak-item"){ speak(el.getAttribute("data-speak")); return; }
     if(action === "month-prev"){ ui.monthCursor = addMonths(ui.monthCursor,-1); render(); return; }
     if(action === "month-next"){ ui.monthCursor = addMonths(ui.monthCursor,1); render(); return; }
@@ -1409,13 +1439,10 @@
       var card = handle.closest(".card");
       var list = handle.closest(".day-list");
       if(!card || !list) return;
-      var startY=0, tracking=false, engaged=false;
-      handle.addEventListener("pointerdown", function(e){
-        startY = e.clientY; tracking = true; engaged = false;
-        try{ handle.setPointerCapture(e.pointerId); }catch(err){}
-      });
-      handle.addEventListener("pointermove", function(e){
-        if(!tracking) return;
+      var startY=0, tracking=false, engaged=false, pid=null;
+
+      function onMove(e){
+        if(!tracking || e.pointerId !== pid) return;
         var dy = e.clientY - startY;
         if(!engaged){
           if(Math.abs(dy) < ENGAGE_THRESHOLD) return;
@@ -1440,10 +1467,14 @@
             startY = e.clientY;
           }
         }
-      });
-      function endDragHandle(){
-        if(!tracking) return;
+      }
+      function onUp(e){
+        if(!tracking || e.pointerId !== pid) return;
         tracking = false;
+        // listeners live on document so a mid-drag DOM move can't sever the gesture
+        document.removeEventListener("pointermove", onMove, true);
+        document.removeEventListener("pointerup", onUp, true);
+        document.removeEventListener("pointercancel", onUp, true);
         if(engaged){
           card.classList.remove("dragging");
           card.style.transform = "";
@@ -1455,8 +1486,12 @@
         }
         engaged = false;
       }
-      handle.addEventListener("pointerup", endDragHandle);
-      handle.addEventListener("pointercancel", endDragHandle);
+      handle.addEventListener("pointerdown", function(e){
+        startY = e.clientY; tracking = true; engaged = false; pid = e.pointerId;
+        document.addEventListener("pointermove", onMove, true);
+        document.addEventListener("pointerup", onUp, true);
+        document.addEventListener("pointercancel", onUp, true);
+      });
     });
   }
 
