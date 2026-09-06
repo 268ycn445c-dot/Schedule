@@ -679,6 +679,45 @@
     maybeSwipeHint();
   }
 
+  // In-place refresh of the day view's numbering, progress bar and next-up
+  // highlight, so marking done / reordering doesn't rebuild the whole screen
+  // (which would cut animations short and drop the scroll position).
+  function renumberDayCards(){
+    var cards = appEl.querySelectorAll(".day-list .card");
+    for(var i=0;i<cards.length;i++){
+      var b = cards[i].querySelector(".order-badge");
+      if(b) b.textContent = (i+1);
+    }
+  }
+  function refreshDayMeta(){
+    if(ui.view !== "day") return;
+    var items = getDayItems(formatKey(ui.date));
+    var doneCount = 0, nextIdx = -1;
+    items.forEach(function(it,i){ if(it.done){ doneCount++; } else if(nextIdx===-1){ nextIdx=i; } });
+    var allDone = items.length>0 && doneCount===items.length;
+    var isToday = sameDay(ui.date, new Date());
+    var highlightIdx = (isToday && state.locked && !allDone) ? nextIdx : -1;
+
+    var prog = appEl.querySelector(".day-progress");
+    if(prog && state.locked && isToday && items.length){
+      var bar = prog.querySelector(".day-progress-bar span");
+      if(bar) bar.style.width = Math.round(doneCount/items.length*100)+"%";
+      var lead = prog.querySelector(".day-progress-lead");
+      if(lead){
+        if(allDone){ lead.textContent = "ぜんぶ できたね！🎉"; lead.classList.add("is-done"); }
+        else if(highlightIdx>-1){
+          var np = getPreset(items[highlightIdx].presetId);
+          lead.textContent = 'つぎは 「'+(np?np.label:'')+'」';
+          lead.classList.remove("is-done");
+        }else{ lead.textContent = "きょうの よてい"; lead.classList.remove("is-done"); }
+      }
+      var cnt = prog.querySelector(".day-progress-count");
+      if(cnt) cnt.textContent = doneCount+" / "+items.length+" できた";
+    }
+    var cards = appEl.querySelectorAll(".day-list .card");
+    for(var j=0;j<cards.length;j++){ cards[j].classList.toggle("is-next", j===highlightIdx); }
+  }
+
   var swipeHintShown = false;
   function maybeSwipeHint(){
     if(swipeHintShown || ui.view !== "day" || !state.locked) return;
@@ -1367,14 +1406,16 @@
     found.done = !found.done;
     saveState();
     haptic(found.done ? 18 : 10);
-    var justDoneId = found.done ? itemId : null;
-    render();
-    if(justDoneId){
-      var el = document.querySelector('.card[data-item-id="'+justDoneId+'"]');
-      if(el){
-        el.classList.add("just-done");
-        setTimeout(function(){ el.classList.remove("just-done"); }, 650);
+    var li = appEl.querySelector('.card[data-item-id="'+itemId+'"]');
+    if(li){
+      li.classList.toggle("is-done", found.done);
+      if(found.done){
+        li.classList.add("just-done");
+        setTimeout(function(){ li.classList.remove("just-done"); }, 650);
       }
+      refreshDayMeta();
+    }else{
+      render();
     }
     if(found.done && !wasAllDone && items.every(function(it){ return it.done; })){
       celebrate();
@@ -1707,10 +1748,13 @@
           card.classList.remove("dragging");
           card.style.transform = "";
           card.style.zIndex = "";
+          card.style.position = "";
           var order = Array.prototype.slice.call(list.children).map(function(c){ return c.getAttribute("data-item-id"); });
           var itemId = card.getAttribute("data-item-id");
           reorderItem(itemId, order.indexOf(itemId));
-          render();
+          // the list is already in its new order in the DOM — just refresh labels
+          renumberDayCards();
+          refreshDayMeta();
         }
         engaged = false;
       }
