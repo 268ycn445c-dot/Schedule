@@ -100,6 +100,18 @@
     color:var(--accent-ink);
   }
   .day-list.is-unlocked .card-inner{border-style:dashed; border-color:var(--accent);}
+
+  .day-progress{margin:0 0 1.1rem;}
+  .day-progress-bar{height:.7rem; border-radius:var(--radius-pill); background:var(--line); overflow:hidden;}
+  .day-progress-bar span{display:block; height:100%; background:var(--done); border-radius:var(--radius-pill); transition:width .35s ease;}
+  .day-progress-lead{
+    margin-top:.5rem; font-family:var(--font-display); font-weight:700; font-size:1.25rem;
+    color:var(--ink); word-break:keep-all;
+  }
+  .day-progress-lead.is-done{color:var(--done);}
+  .day-progress-count{margin-top:.1rem; font-size:.95rem; color:var(--ink-soft); font-weight:700;}
+  .card.is-next .card-inner{border-color:var(--accent);}
+  .card.is-next .order-badge{background:var(--accent); color:var(--accent-ink);}
   .date-nav{display:flex; align-items:center; justify-content:center; gap:.6rem; margin-top:.5rem;}
   .arrow-btn{
     width:3.4rem; height:3.4rem; border-radius:var(--radius-pill); border:1px solid var(--line);
@@ -136,7 +148,13 @@
     padding-right:1.4rem; background:var(--done); color:#fff; font-family:var(--font-display); font-size:1.3rem;
   }
   .card-inner{position:relative; display:flex; align-items:stretch; gap:.2rem; background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius-card); box-shadow:var(--shadow); transition:opacity .25s ease;}
-  .card.is-done .card-inner{opacity:.55;}
+  .card.is-done .card-inner{opacity:.7;}
+  .card.is-done .card-swipe-track{font-size:0;}
+  .card.is-done .order-badge{color:transparent; position:relative;}
+  .card.is-done .order-badge::after{
+    content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:var(--done); font-size:1.5rem; font-weight:900;
+  }
   .card.just-done .card-inner{animation:just-done-pop .5s ease;}
   .card.just-done::after{
     content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -789,16 +807,40 @@
       );
     }
     var unlocked = !state.locked;
+    var doneCount = 0, nextIdx = -1;
+    items.forEach(function(it, i){
+      if(it.done){ doneCount++; }
+      else if(nextIdx === -1){ nextIdx = i; }
+    });
+    var allDone = doneCount === items.length;
+    var isToday = sameDay(ui.date, new Date());
+    var highlightIdx = (isToday && !unlocked && !allDone) ? nextIdx : -1;
+
     var html = "";
     if(unlocked){
       html += '<div class="reorder-hint">🔓 ならびかえ できます — ⠿ を うごかして じゅんばんを かえてね</div>';
+    }else{
+      var pct = Math.round(doneCount / items.length * 100);
+      var lead;
+      if(allDone){ lead = 'ぜんぶ できたね！🎉'; }
+      else if(highlightIdx > -1){
+        var np = getPreset(items[highlightIdx].presetId);
+        lead = 'つぎは 「' + escapeHtml(np ? np.label : '') + '」';
+      }else{ lead = 'この ひの よてい'; }
+      html += (
+        '<div class="day-progress">' +
+          '<div class="day-progress-bar"><span style="width:'+pct+'%"></span></div>' +
+          '<div class="day-progress-lead'+(allDone?' is-done':'')+'">'+lead+'</div>' +
+          '<div class="day-progress-count num">'+doneCount+' / '+items.length+' できた</div>' +
+        '</div>'
+      );
     }
     html += '<ul class="day-list'+(unlocked?' is-unlocked':'')+'">';
     items.forEach(function(item, index){
       var preset = getPreset(item.presetId);
       if(!preset) return;
       html += (
-        '<li class="card'+(item.done?' is-done':'')+'" data-item-id="'+item.id+'">' +
+        '<li class="card'+(item.done?' is-done':'')+(index===highlightIdx?' is-next':'')+'" data-item-id="'+item.id+'">' +
           '<div class="card-swipe-track">できた ✓</div>' +
           '<div class="card-inner">' +
             '<span class="order-badge num">'+(index+1)+'</span>' +
