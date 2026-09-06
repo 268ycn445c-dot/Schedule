@@ -532,6 +532,7 @@
         var parsed = JSON.parse(raw);
         if(parsed && parsed.presets){
           if(!parsed.sets) parsed.sets = [];
+          parsed.sets.forEach(function(s){ if(!Array.isArray(s.presetIds)) s.presetIds = []; });
           if(parsed.locked === undefined) parsed.locked = true;
           return parsed;
         }
