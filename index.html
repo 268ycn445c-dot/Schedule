@@ -101,6 +101,37 @@
   .lock-btn .lock-ico{font-size:1.2rem; line-height:1;}
   .lock-btn:active{transform:scale(.96);}
   .lock-btn.is-unlocked{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .topbar-actions{flex:none; display:flex; align-items:center; gap:.45rem;}
+  .sync-btn{
+    position:relative; flex:none; width:2.6rem; height:2.6rem; border-radius:50%;
+    border:1px solid var(--line); background:var(--paper-raised); font-size:1.2rem; line-height:1;
+  }
+  .sync-dot{
+    position:absolute; right:.1rem; bottom:.1rem; width:.7rem; height:.7rem; border-radius:50%;
+    border:2px solid var(--paper-raised); background:var(--ink-soft);
+  }
+  .sync-dot.is-ok{background:var(--done);}
+  .sync-dot.is-offline, .sync-dot.is-connecting{background:var(--accent);}
+  .sync-dot.is-error{background:var(--holiday);}
+  .sync-status-line{font-weight:700; margin:.2rem 0 .4rem;}
+  .member-list{list-style:none; margin:.4rem 0; padding:0;}
+  .member-list li{display:flex; align-items:center; gap:.6rem; padding:.55rem 0; border-bottom:1px solid var(--line);}
+  .member-email{flex:1; min-width:0; overflow-wrap:anywhere; font-weight:700;}
+  .member-remove{flex:none; padding:.35rem .8rem; border-radius:12px; border:1px solid var(--line); background:var(--paper-raised); color:#B5473C; font-weight:700;}
+  .member-add{display:flex; gap:.5rem; margin-top:.7rem;}
+  .member-add .text-input{flex:1; min-width:0; font-size:1.05rem; font-family:var(--font-ui);}
+  .member-add .btn{flex:none; padding:.7rem 1.1rem;}
+  .auth-gate{
+    position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
+    padding:calc(1rem + env(safe-area-inset-top, 0px)) 1.2rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    background:var(--paper); overflow-y:auto;
+  }
+  .auth-card{max-width:24rem; width:100%; text-align:center;}
+  .auth-icon{width:5.5rem; height:5.5rem; border-radius:24px; box-shadow:var(--shadow);}
+  .auth-title{font-family:var(--font-display); font-size:1.6rem; margin:1rem 0 .6rem;}
+  .auth-lead{line-height:1.7; word-break:keep-all; overflow-wrap:anywhere; margin:0 0 1.4rem;}
+  .auth-btn{width:100%; padding:1rem;}
+  .auth-card .hint{margin-top:1rem;}
   .reorder-hint{
     display:flex; align-items:center; gap:.45rem; margin:0 0 .8rem;
     padding:.65rem .9rem; border-radius:16px; font-size:1rem; font-weight:700;
@@ -413,6 +444,11 @@
 <div id="modal-root"></div>
 <div id="fx-root"></div>
 
+<!-- Firebase (Google sign-in + Firestore). If it can't load (first open while offline) the app runs local-only. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
 <script>
 (function(){
   "use strict";
@@ -557,6 +593,10 @@
   var state = loadState();
   var saveWarned = false;
   function saveState(){
+    saveLocal();
+    cloudPush();
+  }
+  function saveLocal(){
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       saveWarned = false;
@@ -655,12 +695,361 @@
   }
 
   // drop cached / stored photos no longer referenced by any preset or set
+  // (a synced photo may land before the card that uses it, so those are kept;
+  // they go away when the photo is removed from the cloud)
   function freeUnusedPhotos(){
-    var used = {};
-    allIcons().forEach(function(icon){ if(icon.type === "photo") used[icon.value] = 1; });
+    var used = usedPhotoIds();
     Object.keys(photoCache).forEach(function(id){
-      if(!used[id]){ delete photoCache[id]; idbDelete(id); }
+      if(!used[id] && !sync.cloudPhotos[id]){ delete photoCache[id]; idbDelete(id); }
     });
+  }
+  function usedPhotoIds(){
+    var used = {};
+    allIcons().forEach(function(icon){ if(icon.type === "photo" && !isDataUrl(icon.value)) used[icon.value] = 1; });
+    return used;
+  }
+
+  /* ================= Google sign-in + family sync (Firebase) ================= */
+  // Same Firebase project as pecs-app (pecs-family). Firestore layout:
+  //   yoteiFamilies/{fid}                   allowedEmails, presets, sets
+  //   yoteiFamilies/{fid}/months/{yyyy-mm}  days: {"yyyy-mm-dd": [items]}
+  //   yoteiFamilies/{fid}/photos/{photoId}  data: JPEG data URL
+  // The schedule is split by month and photos get their own documents so no
+  // document gets near Firestore's 1 MB limit. "locked" stays per device.
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyB3j4Sf0JVFDnBQDxge3EnA17hARnIUWno",
+    authDomain: "pecs-family.firebaseapp.com",
+    projectId: "pecs-family",
+    storageBucket: "pecs-family.firebasestorage.app",
+    messagingSenderId: "739244225472",
+    appId: "1:739244225472:web:6a8b0d912f600bc4698e25"
+  };
+  var FAMILY_KEY = "yotei-family-id";
+  var sync = {
+    available: typeof firebase !== "undefined",  // SDK can be missing when first opened offline
+    authKnown: false, user: null, db: null, famRef: null, unsubs: [],
+    status: "off", error: "", emails: [], ready: false, photosReady: false,
+    lastMain: "", lastMonths: {}, lastPhotos: {}, cloudPhotos: {}, uploading: {},
+    renderQueued: false, renderPending: false
+  };
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k, v){ try{ if(v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); }catch(e){} }
+  function plain(v){ return JSON.parse(JSON.stringify(v)); }
+
+  function mainJson(){ return JSON.stringify({p:state.presets, s:state.sets}); }
+  function monthDays(month){
+    var days = {};
+    Object.keys(state.schedule).sort().forEach(function(k){
+      if(k.slice(0,7) === month) days[k] = getDayItems(k);
+    });
+    return days;
+  }
+  function allMonths(){
+    var m = {};
+    Object.keys(state.schedule).forEach(function(k){ m[k.slice(0,7)] = 1; });
+    return Object.keys(m);
+  }
+
+  // write whatever changed since the last push / remote update
+  function cloudPush(){
+    var fam = sync.famRef;
+    if(!fam || !sync.ready) return;
+    var main = mainJson();
+    if(main !== sync.lastMain){
+      sync.lastMain = main;
+      fam.update({presets:plain(state.presets), sets:plain(state.sets), updatedAt:Date.now()}).catch(onSyncError);
+    }
+    allMonths().forEach(function(m){
+      var days = monthDays(m), j = JSON.stringify(days);
+      if(j !== sync.lastMonths[m]){
+        sync.lastMonths[m] = j;
+        fam.collection("months").doc(m).set({days:plain(days), updatedAt:Date.now()}).catch(onSyncError);
+      }
+    });
+    var used = usedPhotoIds();
+    if(sync.photosReady){
+      Object.keys(used).forEach(function(id){
+        if(sync.cloudPhotos[id] || sync.uploading[id] || !photoCache[id]) return;
+        sync.uploading[id] = 1;
+        fam.collection("photos").doc(id).set({data:photoCache[id]})
+          .then(function(){ sync.cloudPhotos[id] = 1; })
+          .catch(onSyncError)
+          .then(function(){ delete sync.uploading[id]; });
+      });
+    }
+    // only photos this device stopped using get removed from the cloud
+    Object.keys(sync.lastPhotos).forEach(function(id){
+      if(!used[id]) fam.collection("photos").doc(id).delete().catch(function(){});
+    });
+    sync.lastPhotos = used;
+  }
+
+  function applyRemoteMain(data){
+    var before = mainJson();
+    sync.emails = data.allowedEmails || [];
+    state.presets = Array.isArray(data.presets) ? data.presets : [];
+    state.sets = Array.isArray(data.sets) ? data.sets : [];
+    state.sets.forEach(function(s){ if(!Array.isArray(s.presetIds)) s.presetIds = []; });
+    sync.lastMain = mainJson();
+    sync.lastPhotos = usedPhotoIds();
+    if(sync.lastMain !== before){ saveLocal(); requestRender(); }
+  }
+  function applyRemoteMonth(month, days){
+    Object.keys(state.schedule).forEach(function(k){
+      if(k.slice(0,7) === month && !(k in days)) delete state.schedule[k];
+    });
+    Object.keys(days).forEach(function(k){ if(Array.isArray(days[k])) state.schedule[k] = days[k]; });
+    sync.lastMonths[month] = JSON.stringify(monthDays(month));
+  }
+
+  // remote changes arriving while a sheet is open or a card is mid-drag wait
+  function requestRender(){
+    if(sync.renderQueued) return;
+    sync.renderQueued = true;
+    requestAnimationFrame(function(){
+      sync.renderQueued = false;
+      if(modalState || appEl.querySelector(".dragging")){ sync.renderPending = true; return; }
+      render();
+    });
+  }
+
+  function setSyncStatus(s, err){
+    sync.status = s;
+    if(err !== undefined) sync.error = err;
+    var dot = document.querySelector(".sync-dot");
+    if(dot) dot.className = "sync-dot is-" + s;
+    if(modalState && modalState.type === "settings") renderModal();
+  }
+  var syncErrorShown = false;
+  function onSyncError(e){
+    console.error(e);
+    var msg = (e && e.code === "permission-denied")
+      ? "きょうゆうの けんげんが ありません"
+      : "どうきが できませんでした";
+    setSyncStatus("error", msg + (e && e.message ? "（" + e.message + "）" : ""));
+    if(!syncErrorShown){ syncErrorShown = true; showToast("⚠️ " + msg, null, null); }
+  }
+
+  // first time this device joins a family that already has data: keep both
+  function mergeCloudIntoLocal(ref){
+    return Promise.all([ref.get(), ref.collection("months").get()]).then(function(r){
+      var data = r[0].data() || {};
+      function union(local, remote){
+        var ids = {}, out = remote.slice();
+        remote.forEach(function(x){ ids[x.id] = 1; });
+        local.forEach(function(x){ if(!ids[x.id]) out.push(x); });
+        return out;
+      }
+      state.presets = union(state.presets, data.presets || []);
+      state.sets = union(state.sets, data.sets || []);
+      r[1].forEach(function(doc){
+        var days = doc.data().days || {};
+        Object.keys(days).forEach(function(k){
+          state.schedule[k] = union(getDayItems(k), Array.isArray(days[k]) ? days[k] : []);
+        });
+      });
+      saveLocal();
+    });
+  }
+  function uploadAll(ref, isNew){
+    var email = (sync.user.email || "").toLowerCase();
+    var main = {presets:plain(state.presets), sets:plain(state.sets), updatedAt:Date.now()};
+    var first = isNew
+      ? ref.set(Object.assign({ownerUid:sync.user.uid, allowedEmails:[email], createdAt:Date.now()}, main))
+      : ref.update(main);
+    return first.then(function(){
+      return Promise.all(allMonths().map(function(m){
+        return ref.collection("months").doc(m).set({days:plain(monthDays(m)), updatedAt:Date.now()});
+      }));
+    });
+  }
+
+  function startSync(user){
+    stopSync();
+    sync.user = user;
+    setSyncStatus("connecting", "");
+    var families = sync.db.collection("yoteiFamilies");
+    var stored = lsGet(FAMILY_KEY);
+    var linked = stored
+      ? Promise.resolve(families.doc(stored))
+      : families.where("allowedEmails", "array-contains", (user.email || "").toLowerCase()).limit(1).get()
+          .then(function(qs){
+            if(!qs.empty){
+              var ref = qs.docs[0].ref;
+              return mergeCloudIntoLocal(ref).then(function(){ return uploadAll(ref, false); }).then(function(){ return ref; });
+            }
+            var created = families.doc();
+            return uploadAll(created, true).then(function(){ return created; });
+          });
+    linked.then(function(ref){
+      if(sync.user !== user) return;   // signed out meanwhile
+      lsSet(FAMILY_KEY, ref.id);
+      sync.famRef = ref;
+      subscribeFamily(ref);
+    }).catch(onSyncError);
+  }
+
+  function subscribeFamily(ref){
+    var gotMain = false, gotMonths = false;
+    function maybeReady(){
+      if(sync.ready || !gotMain || !gotMonths) return;
+      sync.ready = true;
+      cloudPush();
+    }
+    sync.unsubs.push(ref.onSnapshot({includeMetadataChanges:true}, function(snap){
+      if(!snap.exists){
+        // removed from the family (or it was deleted): look it up again next time
+        lsSet(FAMILY_KEY, null);
+        return;
+      }
+      if(!snap.metadata.hasPendingWrites) applyRemoteMain(snap.data());
+      else sync.emails = snap.data().allowedEmails || sync.emails;
+      gotMain = true; maybeReady();
+      setSyncStatus(snap.metadata.fromCache ? "offline" : "ok", "");
+    }, function(e){
+      if(e && e.code === "permission-denied") lsSet(FAMILY_KEY, null);
+      onSyncError(e);
+    }));
+    sync.unsubs.push(ref.collection("months").onSnapshot(function(qs){
+      var changed = false;
+      qs.docChanges().forEach(function(ch){
+        if(ch.type === "removed" || ch.doc.metadata.hasPendingWrites) return;
+        applyRemoteMonth(ch.doc.id, ch.doc.data().days || {});
+        changed = true;
+      });
+      if(changed){ saveLocal(); requestRender(); }
+      gotMonths = true; maybeReady();
+    }, onSyncError));
+    sync.unsubs.push(ref.collection("photos").onSnapshot(function(qs){
+      var changed = false;
+      qs.docChanges().forEach(function(ch){
+        var id = ch.doc.id;
+        if(ch.type === "removed"){
+          delete sync.cloudPhotos[id];
+          if(!usedPhotoIds()[id]){ delete photoCache[id]; idbDelete(id); }
+          return;
+        }
+        sync.cloudPhotos[id] = 1;
+        var d = ch.doc.data().data;
+        if(d && photoCache[id] !== d){ photoCache[id] = d; idbPut(id, d); changed = true; }
+      });
+      if(!sync.photosReady){ sync.photosReady = true; cloudPush(); }
+      if(changed) requestRender();
+    }, onSyncError));
+  }
+
+  function stopSync(){
+    sync.unsubs.forEach(function(u){ try{ u(); }catch(e){} });
+    sync.unsubs = [];
+    sync.famRef = null; sync.ready = false; sync.photosReady = false;
+    sync.lastMain = ""; sync.lastMonths = {}; sync.lastPhotos = {}; sync.cloudPhotos = {}; sync.emails = [];
+  }
+
+  function signIn(){
+    var provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({prompt:"select_account"});
+    firebase.auth().signInWithPopup(provider).catch(function(e){
+      if(e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return;
+      // popups are unreliable in some home-screen apps; fall back to a full redirect
+      if(e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment"){
+        return firebase.auth().signInWithRedirect(provider);
+      }
+      throw e;
+    }).catch(function(e){ renderGate("ログイン できませんでした（" + e.message + "）"); });
+  }
+  function signOut(){
+    lsSet(FAMILY_KEY, null);
+    stopSync();
+    modalState = null;
+    firebase.auth().signOut();
+  }
+  function addMember(email){
+    email = (email || "").trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showToast("メールアドレスを たしかめてね", null, null); return; }
+    if(sync.emails.indexOf(email) > -1){ showToast("もう はいっています", null, null); return; }
+    if(!sync.famRef) return;
+    sync.famRef.update({allowedEmails: firebase.firestore.FieldValue.arrayUnion(email)})
+      .then(function(){ showToast("ついか しました", null, null); })
+      .catch(onSyncError);
+  }
+  function removeMember(email){
+    if(sync.emails.length <= 1 || !sync.famRef || (sync.user && (sync.user.email || "").toLowerCase() === email)) return;
+    sync.famRef.update({allowedEmails: firebase.firestore.FieldValue.arrayRemove(email)}).catch(onSyncError);
+  }
+
+  /* ---------- sign-in screen ---------- */
+  var gateEl = null;
+  function renderGate(errorMsg){
+    var needGate = sync.available && sync.authKnown && !sync.user;
+    if(!needGate){ if(gateEl){ gateEl.remove(); gateEl = null; } return; }
+    if(!gateEl){
+      gateEl = document.createElement("div");
+      gateEl.className = "auth-gate";
+      document.body.appendChild(gateEl);
+    }
+    gateEl.innerHTML =
+      '<div class="auth-card">' +
+        '<img class="auth-icon" src="icon-192.png" alt="">' +
+        '<h1 class="auth-title">スケジュールきょうゆう</h1>' +
+        '<p class="auth-lead">Googleアカウントで ログインすると、かぞくの スマホや タブレットと よていが きょうゆうされます。</p>' +
+        '<button class="btn btn-primary auth-btn" data-action="sign-in">Googleで ログイン</button>' +
+        (errorMsg ? '<p class="hint warn">'+escapeHtml(errorMsg)+'</p>' : '') +
+        (navigator.onLine === false ? '<p class="hint warn">インターネットに つないでから ログインしてね</p>' : '') +
+        '<p class="hint">はじめて ログインすると、この たんまつの カードと よていが そのまま つかわれます。</p>' +
+      '</div>';
+  }
+
+  function settingsSheetHtml(){
+    var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
+    html += '<div class="modal-head"><h2 class="modal-title">きょうゆう</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
+    if(!sync.available){
+      html += '<p class="hint">いまは オフラインなので ログイン できません。インターネットに つないで ひらきなおしてね。</p>';
+      return html + '</div></div>';
+    }
+    var label = {ok:"🟢 どうき できています", offline:"🟡 オフライン（つながったら どうき します）",
+                 connecting:"🟡 つないでいます…", error:"🔴 どうき できていません", off:"⚪ ログイン していません"}[sync.status];
+    html += '<p class="sync-status-line">'+label+'</p>';
+    if(sync.status === "error" && sync.error) html += '<p class="hint warn">'+escapeHtml(sync.error)+'</p>';
+    var me = sync.user ? (sync.user.email || "").toLowerCase() : "";
+    html += '<span class="field-label">きょうゆう メンバー</span>';
+    html += '<p class="hint" style="margin-top:-.2rem;">ここに いれた Googleアカウントで ログインすると、おなじ カードと よていが みられます。</p>';
+    html += '<ul class="member-list">';
+    sync.emails.forEach(function(email){
+      html += '<li><span class="member-email">'+escapeHtml(email)+(email===me?'（じぶん）':'')+'</span>' +
+        (email !== me ? '<button class="member-remove" data-action="remove-member" data-email="'+escapeHtml(email)+'" aria-label="はずす">はずす</button>' : '') +
+      '</li>';
+    });
+    html += '</ul>';
+    html += '<div class="member-add"><input class="text-input" id="member-email-input" type="email" inputmode="email" autocomplete="off" placeholder="メールアドレス">' +
+      '<button class="btn btn-primary" data-action="add-member">ついか</button></div>';
+    html += '<p class="hint" style="margin-top:1.4rem;">ログインちゅう: '+escapeHtml(sync.user ? sync.user.email : "-")+'</p>';
+    html += '<div class="btn-row" style="margin-top:.6rem;"><button class="btn btn-danger" data-action="sign-out">ログアウト</button></div>';
+    return html + '</div></div>';
+  }
+
+  function initSync(){
+    if(!sync.available) return;
+    try{
+      firebase.initializeApp(FIREBASE_CONFIG);
+      sync.db = firebase.firestore();
+      sync.db.enablePersistence({synchronizeTabs:true}).catch(function(){});
+    }catch(e){ sync.available = false; return; }
+    firebase.auth().getRedirectResult().catch(function(e){ renderGate("ログイン できませんでした（" + e.message + "）"); });
+    firebase.auth().onAuthStateChanged(function(user){
+      sync.authKnown = true;
+      if(user){
+        sync.user = user;
+        renderGate();
+        startSync(user);
+      }else{
+        stopSync();
+        sync.user = null;
+        setSyncStatus("off", "");
+        renderGate();
+      }
+    });
+    window.addEventListener("online", function(){ renderGate(); });
+    window.addEventListener("offline", function(){ renderGate(); });
   }
 
   function photoSrc(value){
@@ -793,6 +1182,7 @@
   var modalRoot = document.getElementById("modal-root");
 
   function render(){
+    sync.renderPending = false;
     var html = "";
     html += renderTopbar();
     html += '<div class="content" id="content">' + renderContent() + '</div>';
@@ -861,6 +1251,10 @@
     }, 700);
   }
 
+  function syncBtnHtml(){
+    return '<button class="sync-btn" data-action="open-settings" aria-label="きょうゆう せってい">☁️<span class="sync-dot is-'+sync.status+'"></span></button>';
+  }
+
   function renderTopbar(){
     if(ui.view === "day"){
       var d = ui.date;
@@ -873,10 +1267,13 @@
         '<div class="topbar">' +
           '<div class="topbar-row">' +
             '<span class="app-title">スケジュールきょうゆう</span>' +
+            '<div class="topbar-actions">' +
             '<button class="lock-btn'+(state.locked?"":" is-unlocked")+'" data-action="toggle-lock" aria-label="'+(state.locked?"ならびかえの ロックを かいじょする":"ならびかえを ロックする")+'">' +
               '<span class="lock-ico">'+(state.locked?"🔒":"🔓")+'</span>' +
               '<span>'+(state.locked?"ロック":"かいじょちゅう")+'</span>' +
             '</button>' +
+            syncBtnHtml() +
+            '</div>' +
           '</div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="day-prev" aria-label="まえのひ">◀</button>' +
@@ -896,7 +1293,7 @@
       var range3 = (s3.getMonth()+1)+'/'+s3.getDate()+' 〜 '+(e3.getMonth()+1)+'/'+e3.getDate();
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・みっかかん</span></div>' +
+          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・みっかかん</span>'+syncBtnHtml()+'</div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="threeday-prev" aria-label="まえ">◀</button>' +
             '<div class="month-heading num" data-swipe-zone="3day" style="font-size:1.4rem;">'+ range3 +'</div>' +
@@ -909,7 +1306,7 @@
       var m = ui.monthCursor;
       return (
         '<div class="topbar">' +
-          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・1かげつ</span></div>' +
+          '<div class="topbar-row"><span class="app-title">スケジュールきょうゆう・1かげつ</span>'+syncBtnHtml()+'</div>' +
           '<div class="date-nav">' +
             '<button class="arrow-btn" data-action="month-prev" aria-label="まえのつき">◀</button>' +
             '<div class="month-heading num" data-swipe-zone="month">'+ (m.getFullYear()) +'ねん '+ (m.getMonth()+1) +'がつ</div>' +
@@ -921,7 +1318,7 @@
     // presets
     return (
       '<div class="topbar">' +
-        '<div class="topbar-row"><span class="app-title">カード</span></div>' +
+        '<div class="topbar-row"><span class="app-title">カード</span>'+syncBtnHtml()+'</div>' +
       '</div>'
     );
   }
@@ -1422,6 +1819,10 @@
         function(v){ modalState.cardQuery = v; }, addPickerResultsHtml);
       return;
     }
+    if(modalState.type === "settings"){
+      modalRoot.innerHTML = settingsSheetHtml();
+      return;
+    }
     if(modalState.type === "editPreset"){
       var editing = modalState.presetId ? getPreset(modalState.presetId) : null;
       var draft = modalState.draft;
@@ -1608,7 +2009,10 @@
     };
     renderModal();
   }
-  function closeModal(){ modalState = null; renderModal(); }
+  function closeModal(){
+    modalState = null;
+    if(sync.renderPending) render(); else renderModal();
+  }
 
   function addItemToDay(presetId){
     var key = formatKey(ui.date);
@@ -1873,6 +2277,22 @@
       return;
     }
     if(action === "save-preset"){ savePresetFromDraft(); return; }
+    if(action === "open-settings"){ modalState = {type:"settings"}; renderModal(); return; }
+    if(action === "sign-in"){ signIn(); return; }
+    if(action === "sign-out"){
+      if(window.confirm("ログアウト しますか？")) signOut();
+      return;
+    }
+    if(action === "add-member"){
+      var mInput = document.getElementById("member-email-input");
+      addMember(mInput ? mInput.value : "");
+      return;
+    }
+    if(action === "remove-member"){
+      var em = el.getAttribute("data-email");
+      if(window.confirm(em + " を きょうゆうから はずしますか？")) removeMember(em);
+      return;
+    }
     if(action === "delete-preset"){ deleteCurrentPreset(); return; }
   });
 
@@ -2006,6 +2426,7 @@
           // the list is already in its new order in the DOM — just refresh labels
           renumberDayCards();
           refreshDayMeta();
+          if(sync.renderPending) requestRender();
         }
         engaged = false;
       }
@@ -2019,7 +2440,7 @@
   }
 
   render();
-  initPhotos().then(function(){ render(); });
+  initPhotos().then(function(){ render(); initSync(); });
 
   // offline / home-screen install (needs http(s), so skipped when opened as a file)
   if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
