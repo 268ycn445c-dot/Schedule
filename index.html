@@ -2,8 +2,17 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>スケジュールきょうゆう</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#F2F6F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1B2023" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="スケジュール">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
   /* ---------- design tokens ---------- */
   :root{
@@ -79,7 +88,7 @@
   .topbar{
     position:sticky; top:0; z-index:5;
     background:var(--paper); border-bottom:1px solid var(--line);
-    padding:.9rem 1rem .7rem;
+    padding:calc(.9rem + env(safe-area-inset-top, 0px)) 1rem .7rem;
   }
   .topbar-row{display:flex; align-items:center; justify-content:space-between; gap:.5rem;}
   .app-title{font-size:1.05rem; color:var(--ink-soft); letter-spacing:.04em; font-family:var(--font-ui); font-weight:700; white-space:nowrap; min-width:0; overflow:hidden; text-overflow:ellipsis;}
@@ -280,6 +289,7 @@
   .bottom-nav{
     position:fixed; left:0; right:0; bottom:0; z-index:6;
     display:flex; justify-content:center; background:var(--paper); border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom, 0px);
   }
   .bottom-nav-inner{max-width:640px; width:100%; display:grid; grid-template-columns:repeat(4,1fr);}
   .nav-btn{
@@ -300,7 +310,7 @@
   }
   .modal-sheet{
     width:100%; max-width:640px; max-height:86vh; overflow-y:auto; background:var(--paper); border-radius:26px 26px 0 0;
-    padding:1.1rem 1.1rem 2rem; box-shadow:var(--shadow);
+    padding:1.1rem 1.1rem calc(2rem + env(safe-area-inset-bottom, 0px)); box-shadow:var(--shadow);
   }
   .modal-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:.8rem;}
   .modal-title{font-size:1.4rem;}
@@ -360,7 +370,7 @@
   /* ---------- toast (delete undo) ---------- */
   #fx-root{position:fixed; inset:0; pointer-events:none; z-index:40;}
   .toast{
-    position:fixed; left:50%; bottom:6.4rem; transform:translate(-50%,1.5rem);
+    position:fixed; left:50%; bottom:calc(6.4rem + env(safe-area-inset-bottom, 0px)); transform:translate(-50%,1.5rem);
     display:flex; align-items:center; gap:.9rem; width:max-content; max-width:calc(100% - 2rem);
     padding:.8rem 1rem .8rem 1.2rem; border-radius:16px;
     background:var(--ink); color:var(--paper); box-shadow:var(--shadow);
@@ -2010,6 +2020,13 @@
 
   render();
   initPhotos().then(function(){ render(); });
+
+  // offline / home-screen install (needs http(s), so skipped when opened as a file)
+  if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js").catch(function(){});
+    });
+  }
 })();
 </script>
 </body>
