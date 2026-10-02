@@ -254,7 +254,7 @@
   }
   .preset-tile .icon-slot{width:3.6rem; height:3.6rem;}
   .preset-tile .icon-emoji{font-size:2.1rem;}
-  .preset-tile .label{font-family:var(--font-display); font-size:1.1rem; text-align:center;}
+  .preset-tile .label{font-family:var(--font-display); font-size:1.1rem; text-align:center; word-break:keep-all; overflow-wrap:anywhere;}
   .preset-tile.new{border-style:dashed; color:var(--ink-soft);}
   .preset-tile.new .icon-slot{background:none; font-size:2rem;}
   .preset-tile.selected{outline:3px solid var(--accent); border-color:var(--accent);}
@@ -271,6 +271,10 @@
     font-size:.75rem; font-weight:700; display:flex; align-items:center; justify-content:center;
   }
   .section-title{font-size:1.3rem; margin:1.4rem 0 .5rem;}
+  .card-search{position:relative; margin:.2rem 0 .6rem;}
+  .card-search-ico{position:absolute; left:.9rem; top:50%; transform:translateY(-50%); font-size:1.1rem; pointer-events:none;}
+  .card-search .text-input{padding-left:2.7rem;}
+  #cards-tab-results > .section-title:first-child{margin-top:.6rem;}
 
   /* ---------- bottom nav ---------- */
   .bottom-nav{
@@ -307,7 +311,7 @@
     width:100%; font-size:1.4rem; font-family:var(--font-display); padding:.7rem .9rem; border-radius:16px;
     border:1px solid var(--line); background:var(--paper-raised); color:var(--ink);
   }
-  .hint{font-size:.9rem; color:var(--ink-soft); margin-top:.3rem;}
+  .hint{font-size:.9rem; color:var(--ink-soft); margin-top:.3rem; line-height:1.5; word-break:keep-all; overflow-wrap:anywhere;}
   .hint.warn{color:var(--accent-ink);}
 
   .icon-tabs{display:flex; gap:.5rem; margin-top:.3rem;}
@@ -786,6 +790,8 @@
     appEl.innerHTML = html;
     renderModal();
     bindGestures();
+    bindCardSearch("card-search-input", "cards-tab-results",
+      function(v){ ui.cardQuery = v; }, cardsTabResultsHtml);
     maybeSwipeHint();
   }
 
@@ -905,7 +911,7 @@
     // presets
     return (
       '<div class="topbar">' +
-        '<div class="topbar-row"><span class="app-title">よく つかう よてい</span></div>' +
+        '<div class="topbar-row"><span class="app-title">カード</span></div>' +
       '</div>'
     );
   }
@@ -1107,37 +1113,170 @@
     return html;
   }
 
+  /* ---------- card search (カード tab, add picker, set editor) ---------- */
+  // katakana -> hiragana, so 「バス」 and 「ばす」 find each other
+  function normKana(s){
+    return String(s||"").trim().toLowerCase().replace(/[ァ-ヶ]/g, function(c){
+      return String.fromCharCode(c.charCodeAt(0) - 0x60);
+    });
+  }
+  function presetIdsInSets(exceptSetId){
+    var inSet = {};
+    state.sets.forEach(function(s){
+      if(s.id === exceptSetId) return;
+      s.presetIds.forEach(function(pid){ inSet[pid] = 1; });
+    });
+    return inSet;
+  }
+  // No query: only cards that aren't in any set. With a query: every match.
+  function filterCards(query, exceptSetId){
+    var q = normKana(query);
+    if(q) return state.presets.filter(function(p){ return normKana(p.label).indexOf(q) > -1; });
+    var inSet = presetIdsInSets(exceptSetId);
+    return state.presets.filter(function(p){ return !inSet[p.id]; });
+  }
+  function filterSets(query){
+    var q = normKana(query);
+    if(!q) return state.sets;
+    return state.sets.filter(function(s){ return normKana(s.label).indexOf(q) > -1; });
+  }
+  function cardTileHtml(p, action, extra){
+    extra = extra || {};
+    return (
+      '<button class="preset-tile'+(extra.selected?" selected":"")+'" data-action="'+action+'" data-preset-id="'+p.id+'">' +
+        (extra.order ? '<span class="order-chip num">'+extra.order+'</span>' : '') +
+        '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
+        '<span class="label">'+ escapeHtml(p.label) +'</span>' +
+      '</button>'
+    );
+  }
+  function setTileHtml(s, action){
+    return (
+      '<button class="preset-tile set-tile" data-action="'+action+'" data-set-id="'+s.id+'">' +
+        '<span class="set-count num">'+s.presetIds.length+'</span>' +
+        '<span class="icon-slot">'+ renderIcon(s.icon) +'</span>' +
+        '<span class="label">'+ escapeHtml(s.label) +'</span>' +
+      '</button>'
+    );
+  }
+  function cardSearchInputHtml(id, query){
+    return (
+      '<div class="card-search">' +
+        '<span class="card-search-ico" aria-hidden="true">🔍</span>' +
+        '<input class="text-input" id="'+id+'" type="search" value="'+escapeHtml(query||"")+'" placeholder="カードを さがす" autocomplete="off">' +
+      '</div>'
+    );
+  }
+  function newCardTile(query){
+    var q = (query||"").trim();
+    return '<button class="preset-tile new" data-action="new-preset" data-label="'+escapeHtml(q)+'"><span class="icon-slot">＋</span><span class="label">'+(q ? '「'+escapeHtml(q)+'」を つくる' : 'あたらしい カード')+'</span></button>';
+  }
+  // typing only rebuilds the results, so the input keeps focus and the keyboard stays up
+  function bindCardSearch(inputId, resultsId, onQuery, buildHtml){
+    var input = document.getElementById(inputId);
+    if(!input) return;
+    input.addEventListener("input", function(){
+      onQuery(input.value);
+      var box = document.getElementById(resultsId);
+      if(box) box.innerHTML = buildHtml();
+    });
+  }
+
+  function cardsTabResultsHtml(){
+    var q = (ui.cardQuery||"").trim();
+    var html = "";
+    if(q){
+      var sets = filterSets(q), cards = filterCards(q);
+      if(sets.length){
+        html += '<h3 class="section-title">セット</h3><div class="preset-grid">';
+        sets.forEach(function(s){ html += setTileHtml(s, "edit-set"); });
+        html += '</div>';
+      }
+      html += '<h3 class="section-title">カード</h3>';
+      if(!cards.length) html += '<p class="hint" style="margin-top:-.2rem;">みつからなかったよ</p>';
+      html += '<div class="preset-grid">';
+      cards.forEach(function(p){ html += cardTileHtml(p, "edit-preset"); });
+      html += newCardTile(q);
+      html += '</div>';
+      return html;
+    }
+    html += '<h3 class="section-title">セット</h3>';
+    html += '<p class="hint" style="margin-top:-.4rem;">いくつかの カードを まとめて 1かいで ついかできます</p>';
+    html += '<div class="preset-grid">';
+    html += '<button class="preset-tile new" data-action="new-set"><span class="icon-slot">＋</span><span class="label">あたらしい セット</span></button>';
+    state.sets.forEach(function(s){ html += setTileHtml(s, "edit-set"); });
+    html += '</div>';
+
+    var loose = filterCards("");
+    var hidden = state.presets.length - loose.length;
+    html += '<h3 class="section-title">セットに いれていない カード</h3>';
+    if(hidden > 0){
+      html += '<p class="hint" style="margin-top:-.4rem;">セットに はいっている カード('+hidden+'まい)は、けんさくすると でてきます</p>';
+    }
+    html += '<div class="preset-grid">';
+    html += newCardTile("");
+    loose.forEach(function(p){ html += cardTileHtml(p, "edit-preset"); });
+    html += '</div>';
+    return html;
+  }
+
+  function addPickerResultsHtml(){
+    var q = (modalState && modalState.cardQuery || "").trim();
+    var sets = filterSets(q), cards = filterCards(q);
+    var html = "";
+    if(sets.length){
+      html += '<span class="field-label">セット(まとめて ついか)</span><div class="preset-grid">';
+      sets.forEach(function(s){ html += setTileHtml(s, "add-set"); });
+      html += '</div>';
+    }
+    if(cards.length || q){
+      html += '<span class="field-label">'+(q ? 'カード' : 'セットに いれていない カード')+'</span>';
+      if(!cards.length) html += '<p class="hint">みつからなかったよ</p>';
+      html += '<div class="preset-grid">';
+      cards.forEach(function(p){ html += cardTileHtml(p, "add-item"); });
+      html += '</div>';
+    }
+    if(!q && cards.length < state.presets.length){
+      html += '<p class="hint">ほかの カードは けんさくすると でてきます</p>';
+    }
+    html += '<div class="btn-row"><button class="btn btn-ghost" data-action="new-preset" data-label="'+escapeHtml(q)+'">＋ '+(q ? '「'+escapeHtml(q)+'」を ' : 'あたらしく ')+'つくる</button></div>';
+    return html;
+  }
+
+  // set editor: chosen cards (in order) sit above the search box; search finds the rest
+  function setEditorSelectedHtml(){
+    var ids = modalState.draft.presetIds;
+    if(!ids.length) return '<p class="hint">まだ えらんでいないよ。したから えらんでね</p>';
+    var html = '<div class="preset-grid">';
+    ids.forEach(function(pid, i){
+      var p = getPreset(pid);
+      if(p) html += cardTileHtml(p, "toggle-set-preset", {selected:true, order:i+1});
+    });
+    return html + '</div>';
+  }
+  function setEditorResultsHtml(){
+    var draft = modalState.draft;
+    var q = (modalState.cardQuery||"").trim();
+    var html = "";
+    var cards = filterCards(q, modalState.setId).filter(function(p){ return draft.presetIds.indexOf(p.id) === -1; });
+    html += '<span class="field-label" style="font-size:.95rem;">'+(q ? 'けんさく けっか' : 'セットに いれていない カード')+'</span>';
+    if(!cards.length){
+      html += '<p class="hint">'+(q ? 'みつからなかったよ' : 'ほかの カードは けんさくすると でてきます')+'</p>';
+    }
+    html += '<div class="preset-grid">';
+    cards.forEach(function(p){ html += cardTileHtml(p, "toggle-set-preset"); });
+    html += '</div>';
+    return html;
+  }
+
   function renderPresetsView(){
     var html = "";
     if(state.presets.length === 0){
-      html += '<p class="hint" style="font-size:1.1rem; margin:0 0 1rem;">＋を おして、よく つかう よていを とうろくしてね</p>';
+      html += '<p class="hint" style="font-size:1.1rem; margin:0 0 1rem;">＋を おして、カードを つくってね</p>';
+    }else{
+      html += cardSearchInputHtml("card-search-input", ui.cardQuery);
     }
-    html += '<div class="preset-grid">';
-    html += '<button class="preset-tile new" data-action="new-preset"><span class="icon-slot">＋</span><span class="label">あたらしい よてい</span></button>';
-    state.presets.forEach(function(p){
-      html += (
-        '<button class="preset-tile" data-action="edit-preset" data-preset-id="'+p.id+'">' +
-          '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
-          '<span class="label">'+ escapeHtml(p.label) +'</span>' +
-        '</button>'
-      );
-    });
-    html += '</div>';
-
-    html += '<h3 class="section-title">セット</h3>';
-    html += '<p class="hint" style="margin-top:-.4rem;">いくつかの よていを まとめて 1かいで ついかできます</p>';
-    html += '<div class="preset-grid">';
-    html += '<button class="preset-tile new" data-action="new-set"><span class="icon-slot">＋</span><span class="label">あたらしい セット</span></button>';
-    state.sets.forEach(function(s){
-      html += (
-        '<button class="preset-tile set-tile" data-action="edit-set" data-set-id="'+s.id+'">' +
-          '<span class="set-count num">'+s.presetIds.length+'</span>' +
-          '<span class="icon-slot">'+ renderIcon(s.icon) +'</span>' +
-          '<span class="label">'+ escapeHtml(s.label) +'</span>' +
-        '</button>'
-      );
-    });
-    html += '</div>';
+    html += '<div id="cards-tab-results">' + cardsTabResultsHtml() + '</div>';
     return html;
   }
 
@@ -1151,7 +1290,7 @@
         item("day",null,"きょう") +
         item("3day",null,"みっかかん") +
         item("month",null,"つき") +
-        item("presets","⭐","よくつかう") +
+        item("presets","🃏","カード") +
       '</div></nav>'
     );
   }
@@ -1265,34 +1404,12 @@
     if(modalState.type === "addPicker"){
       var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
       html += '<div class="modal-head"><h2 class="modal-title">よていを ふやす</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
-      if(state.sets.length){
-        html += '<span class="field-label">セット(まとめて ついか)</span>';
-        html += '<div class="preset-grid">';
-        state.sets.forEach(function(s){
-          html += (
-            '<button class="preset-tile set-tile" data-action="add-set" data-set-id="'+s.id+'">' +
-              '<span class="set-count num">'+s.presetIds.length+'</span>' +
-          '<span class="icon-slot">'+ renderIcon(s.icon) +'</span>' +
-              '<span class="label">'+ escapeHtml(s.label) +'</span>' +
-            '</button>'
-          );
-        });
-        html += '</div>';
-        html += '<span class="field-label">よてい</span>';
-      }
-      html += '<div class="preset-grid">';
-      state.presets.forEach(function(p){
-        html += (
-          '<button class="preset-tile" data-action="add-item" data-preset-id="'+p.id+'">' +
-            '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
-            '<span class="label">'+ escapeHtml(p.label) +'</span>' +
-          '</button>'
-        );
-      });
-      html += '</div>';
-      html += '<div class="btn-row"><button class="btn btn-ghost" data-action="new-preset">＋ あたらしく つくる</button></div>';
+      if(state.presets.length) html += cardSearchInputHtml("picker-search", modalState.cardQuery);
+      html += '<div id="picker-results">' + addPickerResultsHtml() + '</div>';
       html += '</div></div>';
       modalRoot.innerHTML = html;
+      bindCardSearch("picker-search", "picker-results",
+        function(v){ modalState.cardQuery = v; }, addPickerResultsHtml);
       return;
     }
     if(modalState.type === "editPreset"){
@@ -1300,7 +1417,7 @@
       var draft = modalState.draft;
       var iconTab = draft.icon.type;
       var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
-      html += '<div class="modal-head"><h2 class="modal-title">'+(editing?"よていを へんしゅう":"あたらしい よてい")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
+      html += '<div class="modal-head"><h2 class="modal-title">'+(editing?"カードを へんしゅう":"あたらしい カード")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
 
       html += '<span class="field-label">ひらがなの なまえ</span>';
       html += '<input class="text-input" id="preset-label-input" type="text" value="'+escapeHtml(draft.label)+'" placeholder="れい:おふろ" maxlength="12">';
@@ -1338,7 +1455,7 @@
       html += '<button class="btn btn-primary" data-action="save-preset">ほぞんする</button>';
       html += '</div>';
       if(editing){
-        html += '<div class="btn-row"><button class="btn btn-danger" data-action="delete-preset">この よていを けす</button></div>';
+        html += '<div class="btn-row"><button class="btn btn-danger" data-action="delete-preset">この カードを けす</button></div>';
       }
 
       html += '</div></div>';
@@ -1407,22 +1524,14 @@
         html += '</div>';
       }
 
-      html += '<span class="field-label">ふくまれる よてい(タップした じゅんに ついかされます)</span>';
+      html += '<span class="field-label">ふくまれる カード(タップした じゅんに ついかされます)</span>';
       if(state.presets.length === 0){
-        html += '<p class="hint">さきに「よく つかう」で よていを つくってね</p>';
+        html += '<p class="hint">さきに「カード」で カードを つくってね</p>';
+      }else{
+        html += '<div id="set-card-selected">' + setEditorSelectedHtml() + '</div>';
+        html += '<div style="margin-top:.8rem;">' + cardSearchInputHtml("set-card-search", modalState.cardQuery) + '</div>';
+        html += '<div id="set-card-results">' + setEditorResultsHtml() + '</div>';
       }
-      html += '<div class="preset-grid">';
-      state.presets.forEach(function(p){
-        var order = sdraft.presetIds.indexOf(p.id);
-        html += (
-          '<button class="preset-tile'+(order>-1?" selected":"")+'" data-action="toggle-set-preset" data-preset-id="'+p.id+'">' +
-            (order>-1 ? '<span class="order-chip num">'+(order+1)+'</span>' : '') +
-            '<span class="icon-slot">'+ renderIcon(p.icon) +'</span>' +
-            '<span class="label">'+ escapeHtml(p.label) +'</span>' +
-          '</button>'
-        );
-      });
-      html += '</div>';
 
       html += '<div class="btn-row" style="margin-top:1.6rem;"><button class="btn btn-ghost" data-action="preview-speak-set">🔊 きいてみる</button></div>';
 
@@ -1436,6 +1545,8 @@
       html += '</div></div>';
       modalRoot.innerHTML = html;
 
+      bindCardSearch("set-card-search", "set-card-results",
+        function(v){ modalState.cardQuery = v; }, setEditorResultsHtml);
       var sInput = document.getElementById("set-label-input");
       if(sInput){
         sInput.addEventListener("input", function(){
@@ -1465,12 +1576,12 @@
 
   /* ================= actions ================= */
   function openAddPicker(){ modalState = {type:"addPicker"}; renderModal(); }
-  function openPresetEditor(presetId, focus){
+  function openPresetEditor(presetId, focus, label){
     var preset = presetId ? getPreset(presetId) : null;
     modalState = {
       type:"editPreset",
       presetId: presetId || null,
-      draft: preset ? {label:preset.label, icon:{type:preset.icon.type, value:preset.icon.value}} : {label:"", icon:{type:"emoji", value:EMOJI_CHOICES[0]}},
+      draft: preset ? {label:preset.label, icon:{type:preset.icon.type, value:preset.icon.value}} : {label:label||"", icon:{type:"emoji", value:EMOJI_CHOICES[0]}},
       _focusPending: !!focus
     };
     renderModal();
@@ -1609,7 +1720,7 @@
     var draft = modalState.draft;
     var label = (draft.label||"").trim();
     if(!label){ speak("なまえを にゅうりょくしてね"); return; }
-    if(!draft.presetIds.length){ speak("よていを 1つ いじょう えらんでね"); return; }
+    if(!draft.presetIds.length){ speak("カードを 1まい いじょう えらんでね"); return; }
     if(modalState.setId){
       var s = getSet(modalState.setId);
       s.label = label; s.icon = draft.icon; s.presetIds = draft.presetIds.slice();
@@ -1648,6 +1759,7 @@
     if(action === "switch-view"){
       var v = el.getAttribute("data-view");
       if(v === "day" || v === "3day"){ ui.date = new Date(); }
+      if(v === "presets" && ui.view !== "presets"){ ui.cardQuery = ""; }
       ui.view = v;
       render();
       return;
@@ -1659,7 +1771,7 @@
       return;
     }
     if(action === "open-add"){ openAddPicker(); return; }
-    if(action === "new-preset"){ openPresetEditor(null, true); return; }
+    if(action === "new-preset"){ openPresetEditor(null, true, el.getAttribute("data-label")); return; }
     if(action === "edit-preset"){ openPresetEditor(el.getAttribute("data-preset-id"), false); return; }
     if(action === "add-item"){
       addItemToDay(el.getAttribute("data-preset-id"));
@@ -1678,6 +1790,13 @@
         var ids = modalState.draft.presetIds;
         var at = ids.indexOf(pid);
         if(at > -1){ ids.splice(at,1); } else { ids.push(pid); }
+        var box = document.getElementById("set-card-results");
+        var chosen = document.getElementById("set-card-selected");
+        if(box && chosen){
+          chosen.innerHTML = setEditorSelectedHtml();
+          box.innerHTML = setEditorResultsHtml();
+          return;
+        }
       }
       renderModal();
       return;
