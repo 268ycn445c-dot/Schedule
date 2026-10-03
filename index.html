@@ -319,6 +319,9 @@
     font-size:.75rem; font-weight:700; display:flex; align-items:center; justify-content:center;
   }
   .section-title{font-size:1.3rem; margin:1.4rem 0 .5rem;}
+  .folder-head{display:flex; align-items:center; gap:.7rem; margin-bottom:.8rem;}
+  .folder-back{flex:none; padding:.55rem .9rem; font-size:1rem;}
+  .folder-name{display:flex; align-items:center; gap:.5rem; min-width:0; font-family:var(--font-display); font-size:1.2rem; font-weight:700;}
   .card-search{position:relative; margin:.2rem 0 .6rem;}
   .card-search-ico{position:absolute; left:.9rem; top:50%; transform:translateY(-50%); font-size:1.1rem; pointer-events:none;}
   .card-search .text-input{padding-left:2.7rem;}
@@ -1603,7 +1606,7 @@
     if(q){
       var sets = filterSets(q), cards = filterCards(q);
       if(sets.length){
-        html += '<h3 class="section-title">セット</h3><div class="preset-grid">';
+        html += '<h3 class="section-title">フォルダ</h3><div class="preset-grid">';
         sets.forEach(function(s){ html += setTileHtml(s, "edit-set"); });
         html += '</div>';
       }
@@ -1615,18 +1618,18 @@
       html += '</div>';
       return html;
     }
-    html += '<h3 class="section-title">セット</h3>';
-    html += '<p class="hint" style="margin-top:-.4rem;">いくつかの カードを まとめて 1かいで ついかできます</p>';
+    html += '<h3 class="section-title">フォルダ</h3>';
+    html += '<p class="hint" style="margin-top:-.4rem;">「びょういん」など、ばしょや ばめんごとに カードを わけられます</p>';
     html += '<div class="preset-grid">';
-    html += '<button class="preset-tile new" data-action="new-set"><span class="icon-slot">＋</span><span class="label">あたらしい セット</span></button>';
+    html += '<button class="preset-tile new" data-action="new-set"><span class="icon-slot">＋</span><span class="label">あたらしい フォルダ</span></button>';
     state.sets.forEach(function(s){ html += setTileHtml(s, "edit-set"); });
     html += '</div>';
 
     var loose = filterCards("");
     var hidden = state.presets.length - loose.length;
-    html += '<h3 class="section-title">セットに いれていない カード</h3>';
+    html += '<h3 class="section-title">フォルダに いれていない カード</h3>';
     if(hidden > 0){
-      html += '<p class="hint" style="margin-top:-.4rem;">セットに はいっている カード('+hidden+'まい)は、けんさくすると でてきます</p>';
+      html += '<p class="hint" style="margin-top:-.4rem;">フォルダに はいっている カード('+hidden+'まい)は、フォルダを ひらくか けんさくすると でてきます</p>';
     }
     html += '<div class="preset-grid mini-grid">';
     html += newCardTile("");
@@ -1640,12 +1643,12 @@
     var sets = filterSets(q), cards = filterCards(q);
     var html = "";
     if(sets.length){
-      html += '<span class="field-label">セット(まとめて ついか)</span><div class="preset-grid">';
-      sets.forEach(function(s){ html += setTileHtml(s, "add-set"); });
+      html += '<span class="field-label">フォルダ</span><div class="preset-grid">';
+      sets.forEach(function(s){ html += setTileHtml(s, "open-folder"); });
       html += '</div>';
     }
     if(cards.length || q){
-      html += '<span class="field-label">'+(q ? 'カード' : 'セットに いれていない カード')+'</span>';
+      html += '<span class="field-label">'+(q ? 'カード' : 'フォルダに いれていない カード')+'</span>';
       if(!cards.length) html += '<p class="hint">みつからなかったよ</p>';
       html += '<div class="preset-grid mini-grid">';
       cards.forEach(function(p){ html += cardTileHtml(p, "add-item"); });
@@ -1661,11 +1664,11 @@
   // set editor: chosen cards (in order) sit above the search box; search finds the rest
   function setEditorSelectedHtml(){
     var ids = modalState.draft.presetIds;
-    if(!ids.length) return '<p class="hint">まだ えらんでいないよ。したから えらんでね</p>';
+    if(!ids.length) return '<p class="hint">まだ はいっていないよ。したから タップして いれてね（もういちど タップで はずせます）</p>';
     var html = '<div class="preset-grid mini-grid">';
     ids.forEach(function(pid, i){
       var p = getPreset(pid);
-      if(p) html += cardTileHtml(p, "toggle-set-preset", {selected:true, order:i+1});
+      if(p) html += cardTileHtml(p, "toggle-set-preset", {selected:true});
     });
     return html + '</div>';
   }
@@ -1674,7 +1677,7 @@
     var q = (modalState.cardQuery||"").trim();
     var html = "";
     var cards = filterCards(q, modalState.setId).filter(function(p){ return draft.presetIds.indexOf(p.id) === -1; });
-    html += '<span class="field-label" style="font-size:.95rem;">'+(q ? 'けんさく けっか' : 'セットに いれていない カード')+'</span>';
+    html += '<span class="field-label" style="font-size:.95rem;">'+(q ? 'けんさく けっか' : 'フォルダに いれていない カード')+'</span>';
     if(!cards.length){
       html += '<p class="hint">'+(q ? 'みつからなかったよ' : 'ほかの カードは けんさくすると でてきます')+'</p>';
     }
@@ -1819,8 +1822,18 @@
     if(modalState.type === "addPicker"){
       var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
       html += '<div class="modal-head"><h2 class="modal-title">よていを ふやす</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
-      if(state.presets.length) html += cardSearchInputHtml("picker-search", modalState.cardQuery);
-      html += '<div id="picker-results">' + addPickerResultsHtml() + '</div>';
+      var folder = modalState.folderId ? getSet(modalState.folderId) : null;
+      if(folder){
+        html += '<div class="folder-head"><button class="btn btn-ghost folder-back" data-action="close-folder">← もどる</button>' +
+          '<span class="folder-name"><span class="icon-slot sm">'+renderIcon(folder.icon)+'</span>'+escapeHtml(folder.label)+'</span></div>';
+        html += '<div class="preset-grid mini-grid">';
+        folder.presetIds.forEach(function(pid){ var fp = getPreset(pid); if(fp) html += cardTileHtml(fp, "add-item"); });
+        html += '</div>';
+        if(!folder.presetIds.length) html += '<p class="hint">この フォルダには まだ カードが ないよ</p>';
+      }else{
+        if(state.presets.length) html += cardSearchInputHtml("picker-search", modalState.cardQuery);
+        html += '<div id="picker-results">' + addPickerResultsHtml() + '</div>';
+      }
       html += '</div></div>';
       modalRoot.innerHTML = html;
       bindCardSearch("picker-search", "picker-results",
@@ -1834,7 +1847,7 @@
     if(modalState.type === "editPreset"){
       var editing = modalState.presetId ? getPreset(modalState.presetId) : null;
       var draft = modalState.draft;
-      var iconTab = draft.icon.type;
+      var iconTab = draft.icon.type === "photo" ? "photo" : "symbol";
       var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
       html += '<div class="modal-head"><h2 class="modal-title">'+(editing?"カードを へんしゅう":"あたらしい カード")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
 
@@ -1846,18 +1859,11 @@
 
       html += '<span class="field-label">マーク</span>';
       html += '<div class="icon-tabs">';
-      html += '<button class="icon-tab'+(iconTab==="emoji"?" active":"")+'" data-action="icon-tab" data-tab="emoji">イラスト</button>';
       html += '<button class="icon-tab'+(iconTab==="symbol"?" active":"")+'" data-action="icon-tab" data-tab="symbol">ドロップス</button>';
       html += '<button class="icon-tab'+(iconTab==="photo"?" active":"")+'" data-action="icon-tab" data-tab="photo">しゃしん</button>';
       html += '</div>';
 
-      if(iconTab === "emoji"){
-        html += '<div class="emoji-grid">';
-        EMOJI_CHOICES.forEach(function(e){
-          html += '<button class="emoji-opt'+(draft.icon.type==="emoji" && draft.icon.value===e?" selected":"")+'" data-action="pick-emoji" data-emoji="'+e+'">'+e+'</button>';
-        });
-        html += '</div>';
-      }else if(iconTab === "symbol"){
+      if(iconTab === "symbol"){
         html += '<input class="text-input" id="symbol-search" type="text" value="'+escapeHtml(modalState.symbolQuery||"")+'" placeholder="れい:はみがき">';
         html += symbolFilterChipsHtml();
         html += '<div class="symbol-grid" id="symbol-results">'+ symbolResultsHtml(draft) +'</div>';
@@ -1911,10 +1917,10 @@
       var sdraft = modalState.draft;
       var sIconTab = sdraft.icon.type;
       var html = '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">';
-      html += '<div class="modal-head"><h2 class="modal-title">'+(editingSet?"セットを へんしゅう":"あたらしい セット")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
+      html += '<div class="modal-head"><h2 class="modal-title">'+(editingSet?"フォルダを へんしゅう":"あたらしい フォルダ")+'</h2><button class="close-btn" data-action="close-modal">✕</button></div>';
 
       html += '<span class="field-label">ひらがなの なまえ</span>';
-      html += '<input class="text-input" id="set-label-input" type="text" value="'+escapeHtml(sdraft.label)+'" placeholder="れい:あさの したく" maxlength="14">';
+      html += '<input class="text-input" id="set-label-input" type="text" value="'+escapeHtml(sdraft.label)+'" placeholder="れい:びょういん" maxlength="14">';
       if(sdraft.label && /[^ぁ-んー\s]/.test(sdraft.label)){
         html += '<div class="hint warn">ひらがなで にゅうりょくすると よみやすいよ</div>';
       }
@@ -1943,7 +1949,7 @@
         html += '</div>';
       }
 
-      html += '<span class="field-label">ふくまれる カード(タップした じゅんに ついかされます)</span>';
+      html += '<span class="field-label">フォルダに いれる カード</span>';
       if(state.presets.length === 0){
         html += '<p class="hint">さきに「カード」で カードを つくってね</p>';
       }else{
@@ -1958,7 +1964,7 @@
       html += '<button class="btn btn-primary" data-action="save-set">ほぞんする</button>';
       html += '</div>';
       if(editingSet){
-        html += '<div class="btn-row"><button class="btn btn-danger" data-action="delete-set">この セットを けす</button></div>';
+        html += '<div class="btn-row"><button class="btn btn-danger" data-action="delete-set">この フォルダを けす</button></div>';
       }
 
       html += '</div></div>';
@@ -2000,7 +2006,7 @@
     modalState = {
       type:"editPreset",
       presetId: presetId || null,
-      draft: preset ? {label:preset.label, icon:{type:preset.icon.type, value:preset.icon.value}} : {label:label||"", icon:{type:"emoji", value:EMOJI_CHOICES[0]}},
+      draft: preset ? {label:preset.label, icon:{type:preset.icon.type, value:preset.icon.value}} : {label:label||"", icon:{type:"symbol", value:""}},
       _focusPending: !!focus
     };
     renderModal();
@@ -2031,20 +2037,6 @@
     modalState = null;
     render();
     if(preset) speak(preset.label);
-  }
-
-  function addSetToDay(setId){
-    var set = getSet(setId);
-    if(!set) return;
-    var key = formatKey(ui.date);
-    var items = getDayItems(key);
-    set.presetIds.forEach(function(pid){
-      if(getPreset(pid)) items.push({id:uid(), presetId:pid, done:false});
-    });
-    saveState();
-    modalState = null;
-    render();
-    speak(set.label);
   }
 
   function toggleDoneAnimated(cardEl, itemId){
@@ -2110,6 +2102,7 @@
     var draft = modalState.draft;
     var label = (draft.label||"").trim();
     if(!label){ speak("なまえを にゅうりょくしてね"); return; }
+    if(!draft.icon.value){ showToast("ドロップスか しゃしんを えらんでね", null, null); speak("えを えらんでね"); return; }
     if(modalState.presetId){
       var p = getPreset(modalState.presetId);
       p.label = label; p.icon = draft.icon;
@@ -2142,7 +2135,7 @@
     var draft = modalState.draft;
     var label = (draft.label||"").trim();
     if(!label){ speak("なまえを にゅうりょくしてね"); return; }
-    if(!draft.presetIds.length){ speak("カードを 1まい いじょう えらんでね"); return; }
+    if(!draft.presetIds.length){ speak("カードを 1まい いじょう いれてね"); return; }
     if(modalState.setId){
       var s = getSet(modalState.setId);
       s.label = label; s.icon = draft.icon; s.presetIds = draft.presetIds.slice();
@@ -2205,7 +2198,8 @@
     }
     if(action === "new-set"){ openSetEditor(null, true); return; }
     if(action === "edit-set"){ openSetEditor(el.getAttribute("data-set-id"), false); return; }
-    if(action === "add-set"){ addSetToDay(el.getAttribute("data-set-id")); return; }
+    if(action === "open-folder"){ if(modalState){ modalState.folderId = el.getAttribute("data-set-id"); renderModal(); } return; }
+    if(action === "close-folder"){ if(modalState){ modalState.folderId = null; renderModal(); } return; }
     if(action === "toggle-set-preset"){
       if(modalState){
         var pid = el.getAttribute("data-preset-id");
